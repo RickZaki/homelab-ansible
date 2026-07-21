@@ -15,7 +15,7 @@
 #   ansible-playbook playbooks/apt_upgrade.yml --skip-tags reboot
 
 - name: APT update and upgrade
-  hosts: apt-enabled
+  hosts: apt_enabled
   become: true
   gather_facts: false
   serial: "{{ batch_size | default(omit) }}"  # use --extra-vars batch_size=1 for rolling reboots
