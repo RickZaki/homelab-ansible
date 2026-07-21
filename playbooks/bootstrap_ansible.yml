@@ -17,12 +17,12 @@
   become: true
   gather_facts: false
 
+
   vars:
     ansible_user: root
     ansible_ssh_private_key_file: ""
     ansible_service_user: ansible
     ansible_service_group: ansible
-    ansible_pubkey_content: "{{ ansible_pubkey_content }}"
 
 
   tasks:
@@ -66,7 +66,7 @@
     - name: Install ansible SSH public key
       ansible.builtin.lineinfile:
         path: "/home/{{ ansible_service_user }}/.ssh/authorized_keys"
-        line: "{{ ansible_pubkey_content }}"
+        line: "{{ ansible_pubkey_key }}"
         create: true
         owner: "{{ ansible_service_user }}"
         group: "{{ ansible_service_group }}"
