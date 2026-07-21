@@ -23,7 +23,6 @@
     ansible_service_user: ansible
     ansible_service_group: ansible
     ansible_pubkey_content: "{{ ansible_pubkey_content }}"
-    ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o PasswordAuthentication=yes -o PubkeyAuthentication=no"
 
 
   tasks:
