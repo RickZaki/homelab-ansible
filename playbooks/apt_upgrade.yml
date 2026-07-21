@@ -1,0 +1,53 @@
+---
+# apt_upgrade.yml — Run apt update, dist-upgrade, autoremove, and optional reboot on target hosts.
+#
+# Usage:
+#   # All hosts (no reboot batching)
+#   ansible-playbook playbooks/apt_upgrade.yml
+#
+#   # Specific group
+#   ansible-playbook playbooks/apt_upgrade.yml --limit proxmox
+#
+#   # Rolling reboot — one node at a time (safe for Proxmox clusters)
+#   ansible-playbook playbooks/apt_upgrade.yml --limit proxmox -e batch_size=1
+#
+#   # Skip reboots entirely — reboot manually later
+#   ansible-playbook playbooks/apt_upgrade.yml --skip-tags reboot
+
+- name: APT update and upgrade
+  hosts: apt-enabled
+  become: true
+  gather_facts: false
+  serial: "{{ batch_size | default(omit) }}"  # use --extra-vars batch_size=1 for rolling reboots
+
+  tasks:
+    - name: Update apt cache and upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Remove unused packages
+      ansible.builtin.apt:
+        autoremove: true
+        purge: true
+
+    - name: Clean stale package cache
+      ansible.builtin.apt:
+        autoclean: true
+
+    - name: Check if reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Report reboot status
+      ansible.builtin.debug:
+        msg: "{{ 'REBOOT REQUIRED' if reboot_required.stat.exists else 'No reboot required' }}"
+
+    - name: Reboot if required
+      ansible.builtin.reboot:
+        msg: "Reboot triggered by apt upgrade"
+        post_reboot_delay: 30
+      when: reboot_required.stat.exists
+      tags: reboot
