@@ -13,7 +13,7 @@
 
 
 - name: Bootstrap ansible service account
-  hosts: bootstrap
+  hosts: all
   become: true
   gather_facts: false
 
