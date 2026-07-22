@@ -1,0 +1,26 @@
+---
+# silent_whiptail_install.yml — Drop a fake whiptail binary into /tmp/silent-pve
+# so that Proxmox community scripts run non-interactively.
+#
+# Pair with silent_whiptail_remove.yml in a block/always to guarantee cleanup.
+#
+# Usage in a playbook:
+#   - block:
+#       - ansible.builtin.import_tasks: ../tasks/silent_whiptail_install.yml
+#       - name: Run community script
+#         ansible.builtin.shell: |
+#           PATH="/tmp/silent-pve:$PATH" bash -c "$(curl -fsSL ...)" < /dev/null
+#     always:
+#       - ansible.builtin.import_tasks: ../tasks/silent_whiptail_remove.yml
+
+- name: Create whiptail wrapper directory
+  ansible.builtin.file:
+    path: /tmp/silent-pve
+    state: directory
+    mode: "0755"
+
+- name: Install fake whiptail to suppress interactive prompts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../files/silent-whiptail"
+    dest: /tmp/silent-pve/whiptail
+    mode: "0755"

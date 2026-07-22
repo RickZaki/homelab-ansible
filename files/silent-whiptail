@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# silent-whiptail — fake whiptail binary for running Proxmox community scripts
+# non-interactively under Ansible (or any non-TTY environment).
+#
+# Usage: inject into PATH before the community script runs, e.g.:
+#   PATH="/tmp/silent-pve:$PATH" bash -c "$(curl -fsSL https://...)" < /dev/null
+#
+# Selections are returned via stderr, same protocol as real whiptail.
+
+# --passwordbox: empty string → triggers automatic login
+if [[ "$*" == *"--passwordbox"* ]]; then
+  echo "" >&2
+  exit 0
+fi
+
+# --inputbox: echo back the default value (last positional arg).
+# The community scripts pre-populate defaults from var_* env vars, so this
+# returns exactly the value we want without having to re-specify it here.
+if [[ "$*" == *"--inputbox"* ]]; then
+  echo "${@: -1}" >&2
+  exit 0
+fi
+
+# --radiolist: return the tag of the item pre-selected with ON.
+# e.g. container type radiolist has "1 Unprivileged ON 0 Privileged OFF"
+if [[ "$*" == *"--radiolist"* ]]; then
+  args=("$@")
+  for (( i=2; i<${#args[@]}; i++ )); do
+    if [[ "${args[$i]^^}" == "ON" ]]; then
+      echo "${args[$((i-2))]}" >&2
+      exit 0
+    fi
+  done
+  exit 0
+fi
+
+# --menu: return a value based on context clues in the argument list.
+# Handles bridge selection, IPv4/IPv6 method, and the app-defaults diff menu.
+if [[ "$*" == *"--menu"* ]]; then
+  if   [[ "$*" == *"vmbr"* ]] && [[ -n "$var_brg" ]]; then echo "$var_brg" >&2  # bridge selection
+  elif [[ "$*" == *"dhcp"* ]];         then echo "dhcp" >&2          # IPv4: prefer DHCP
+  elif [[ "$*" == *"none"* ]];         then echo "none" >&2          # IPv6: prefer none
+  elif [[ "$*" == *"Keep Current"* ]]; then echo "Keep Current" >&2  # app-defaults diff menu
+  else
+    # Fallback: extract the first tag from the menu list.
+    # Menu args: ... <height> <width> <listheight> <tag> <item> ...
+    # The first tag appears immediately after the third consecutive integer.
+    args=("$@")
+    count=0
+    for (( i=0; i<${#args[@]}; i++ )); do
+      if [[ "${args[$i]}" =~ ^[0-9]+$ ]]; then
+        (( ++count == 3 )) && { echo "${args[$((i+1))]}" >&2; exit 0; }
+      fi
+    done
+  fi
+  exit 0
+fi
+
+# --yesno, --msgbox, --textbox, etc.: simulate OK / YES
+exit 0

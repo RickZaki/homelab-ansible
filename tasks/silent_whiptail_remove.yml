@@ -1,0 +1,9 @@
+---
+# silent_whiptail_remove.yml — Remove the fake whiptail wrapper from /tmp/silent-pve.
+# Always pair with silent_whiptail_install.yml; call this in a block/always
+# so cleanup runs even if the community script fails.
+
+- name: Remove whiptail wrapper
+  ansible.builtin.file:
+    path: /tmp/silent-pve
+    state: absent

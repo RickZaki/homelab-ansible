@@ -1,0 +1,60 @@
+---
+# provision_gitlab_runner_lxc.yml — Create one Debian LXC per PVE node for GitLab Runners.
+#
+# Thin wrapper around tasks/provision_lxc.yml with GitLab-runner-specific settings.
+#
+# Container spec per node:
+#   VMID    : 133711{node_id}           (e.g. 13371101 on pve01, 13371182 on pve82)
+#   Hostname: gitlab-runner-{node_id}   (e.g. gitlab-runner-01)
+#   VLAN    : 599
+#   Disks   : 8 GB root  +  8 GB mp0 → /var/lib/docker
+#   Features: nesting=1  (required for Docker-in-LXC)
+#   Type    : unprivileged
+#
+# Usage:
+#   # All nodes
+#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml
+#
+#   # Single node
+#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit pve01
+#
+#   # Override storage pool
+#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml -e lxc_storage=local-zfs
+
+- name: Provision GitLab Runner LXC on each PVE node
+  hosts: ProxmoxVirtualEnvironments
+  become: true
+  gather_facts: false
+
+  vars:
+    # --- identity ------------------------------------------------------ #
+    lxc_vmid: "{{ '133711' ~ node_id }}"
+    lxc_hostname: "gitlab-runner-{{ node_id }}"
+
+    # --- resources ----------------------------------------------------- #
+    lxc_cores: 1
+    lxc_memory: 512
+    lxc_root_size: 8
+
+    # --- network ------------------------------------------------------- #
+    lxc_bridge: vmbr1
+    lxc_vlan: "599"
+    lxc_dns: ""                    # empty = inherit PVE node DNS
+
+    # --- storage ------------------------------------------------------- #
+    lxc_storage: local-zfs
+
+    # --- community script ---------------------------------------------- #
+    lxc_script_url: "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh"
+
+    # --- LXC-specific settings ----------------------------------------- #
+    lxc_features: "nesting=1"
+    lxc_autologin: true
+
+    lxc_extra_mounts:
+      - id: mp0
+        size: 8
+        path: /var/lib/docker
+
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/provision_lxc.yml

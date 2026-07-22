@@ -1,0 +1,201 @@
+---
+# tasks/provision_lxc.yml
+# Shared task file — provision or reconcile any Proxmox LXC container from a
+# community-scripts URL.  Import this from a playbook that has already set the
+# required and optional variables listed below.
+#
+# Required vars:
+#   lxc_vmid         — Container ID string (e.g. "13371101")
+#   lxc_hostname     — Hostname inside the container
+#   lxc_script_url   — Full URL of the community bash installer
+#
+# Optional vars (defaults defined in playbooks/provision_lxc.yml):
+#   lxc_cores            (default 1)
+#   lxc_memory           (default 512)    MB
+#   lxc_root_size        (default 8)      GB
+#   lxc_bridge           (default vmbr0)
+#   lxc_vlan             (default "")     empty = no VLAN tag
+#   lxc_dns              (default "")  empty = inherit PVE node DNS
+#   lxc_storage          (default local-zfs)
+#   lxc_features         (default "")     e.g. "nesting=1"
+#   lxc_autologin        (default true)   auto-login root on tty1
+#   lxc_extra_mounts     (default [])     list of {id, size, path}
+#                                         e.g. [{id: mp0, size: 8, path: /var/lib/docker}]
+
+# ------------------------------------------------------------------ #
+# Check existing state                                                 #
+# ------------------------------------------------------------------ #
+
+- name: Check if container {{ lxc_vmid }} already exists
+  ansible.builtin.command: pct status {{ lxc_vmid }}
+  register: pct_status
+  changed_when: false
+  failed_when: false
+
+# ------------------------------------------------------------------ #
+# CREATE — container does not exist                                    #
+# ------------------------------------------------------------------ #
+
+- name: Create container {{ lxc_vmid }} via community script
+  when: pct_status.rc != 0
+  block:
+    - name: Install whiptail wrapper
+      ansible.builtin.import_tasks: silent_whiptail_install.yml
+
+    - name: Run community script ({{ lxc_script_url | basename }})
+      ansible.builtin.shell: |
+        timeout 300 \
+        bash -c "$(curl -fsSL {{ lxc_script_url }})" < /dev/null
+      register: community_script
+      # rc 0   = clean exit
+      # rc 124 = timeout — container already created, in-container apt phase
+      #          hung waiting for network; safe to continue
+      failed_when: community_script.rc not in [0, 124]
+      args:
+        executable: /bin/bash
+      environment:
+        TERM: xterm-256color
+        var_ctid: "{{ lxc_vmid }}"
+        var_hostname: "{{ lxc_hostname }}"
+        var_cpu: "{{ lxc_cores }}"
+        var_ram: "{{ lxc_memory }}"
+        var_disk: "{{ lxc_root_size }}"
+        var_brg: "{{ lxc_bridge }}"
+        var_vlan: "{{ lxc_vlan }}"
+        var_dns: "{{ lxc_dns }}"
+        var_container_storage: "{{ lxc_storage }}"
+        var_template_storage: "local"
+
+  always:
+    - name: Remove whiptail wrapper
+      ansible.builtin.import_tasks: silent_whiptail_remove.yml
+
+- name: Stop container to safely apply post-create settings
+  ansible.builtin.command: pct stop {{ lxc_vmid }}
+  register: pct_stop
+  failed_when: pct_stop.rc != 0 and 'not running' not in pct_stop.stderr
+  when: pct_status.rc != 0
+
+- name: Set container features ({{ lxc_features }})
+  ansible.builtin.command: pct set {{ lxc_vmid }} --features {{ lxc_features }}
+  when:
+    - pct_status.rc != 0
+    - lxc_features | default('') | length > 0
+
+- name: Add extra mount {{ item.id }} → {{ item.path }} ({{ item.size }} GB)
+  ansible.builtin.command: >
+    pct set {{ lxc_vmid }}
+    --{{ item.id }} {{ lxc_storage }}:{{ item.size }},mp={{ item.path }}
+  loop: "{{ lxc_extra_mounts | default([]) }}"
+  when: pct_status.rc != 0
+
+- name: Start container {{ lxc_vmid }}
+  ansible.builtin.command: pct start {{ lxc_vmid }}
+  when: pct_status.rc != 0
+
+# ------------------------------------------------------------------ #
+# UPDATE — container exists, reconcile resources                       #
+# ------------------------------------------------------------------ #
+
+- name: Read current container config
+  ansible.builtin.command: pct config {{ lxc_vmid }}
+  register: pct_config
+  changed_when: false
+  when: pct_status.rc == 0
+
+- name: Parse current core / memory / rootfs values
+  ansible.builtin.set_fact:
+    current_cores:       "{{ pct_config.stdout | regex_search('(?m)^cores: (\\d+)',     '\\1') | first | int }}"
+    current_memory:      "{{ pct_config.stdout | regex_search('(?m)^memory: (\\d+)',    '\\1') | first | int }}"
+    current_rootfs_size: "{{ pct_config.stdout | regex_search('rootfs:.*size=(\\d+)G', '\\1') | first | int }}"
+  when: pct_status.rc == 0
+
+- name: Update cores and memory if changed
+  ansible.builtin.command: >
+    pct set {{ lxc_vmid }}
+    --cores {{ lxc_cores }}
+    --memory {{ lxc_memory }}
+  when:
+    - pct_status.rc == 0
+    - current_cores | int != lxc_cores | int or current_memory | int != lxc_memory | int
+
+- name: Grow rootfs if smaller than desired ({{ lxc_root_size }} GB)
+  ansible.builtin.command: pct resize {{ lxc_vmid }} rootfs {{ lxc_root_size }}G
+  when:
+    - pct_status.rc == 0
+    - current_rootfs_size | int < lxc_root_size | int
+
+- name: Grow extra mount {{ item.id }} if smaller than desired ({{ item.size }} GB)
+  ansible.builtin.command: pct resize {{ lxc_vmid }} {{ item.id }} {{ item.size }}G
+  loop: "{{ lxc_extra_mounts | default([]) }}"
+  when:
+    - pct_status.rc == 0
+    - pct_config.stdout | default('') | regex_search(item.id ~ ':.*size=(\\d+)G', '\\1') | first | default('0') | int > 0
+    - pct_config.stdout | default('') | regex_search(item.id ~ ':.*size=(\\d+)G', '\\1') | first | default('0') | int < item.size | int
+
+- name: Ensure container features are set ({{ lxc_features }})
+  ansible.builtin.command: pct set {{ lxc_vmid }} --features {{ lxc_features }}
+  when:
+    - pct_status.rc == 0
+    - lxc_features | default('') | length > 0
+    - lxc_features not in (pct_config.stdout | default(''))
+
+# ------------------------------------------------------------------ #
+# Verify                                                               #
+# ------------------------------------------------------------------ #
+
+- name: Wait for container to accept commands (up to 60 s)
+  ansible.builtin.command: pct exec {{ lxc_vmid }} -- hostname
+  register: ct_hostname_check
+  retries: 12
+  delay: 5
+  until: ct_hostname_check.rc == 0
+  changed_when: false
+
+- name: Confirm container is up
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: container {{ lxc_vmid }}
+      is running — hostname={{ ct_hostname_check.stdout }}
+
+# ------------------------------------------------------------------ #
+# Configure — autologin on tty1                                        #
+# Uses a systemd drop-in so it survives getty package upgrades.        #
+# pct push avoids shell-escaping issues writing file content via exec. #
+# ------------------------------------------------------------------ #
+
+- name: Write autologin drop-in to temp file on PVE host
+  ansible.builtin.copy:
+    dest: /tmp/lxc-autologin-{{ lxc_vmid }}.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+    mode: "0644"
+  when: lxc_autologin | default(true) | bool
+
+- name: Create drop-in directory inside container
+  ansible.builtin.command: >
+    pct exec {{ lxc_vmid }} --
+    mkdir -p /etc/systemd/system/getty@tty1.service.d
+  changed_when: false
+  when: lxc_autologin | default(true) | bool
+
+- name: Push autologin drop-in into container
+  ansible.builtin.command: >
+    pct push {{ lxc_vmid }}
+    /tmp/lxc-autologin-{{ lxc_vmid }}.conf
+    /etc/systemd/system/getty@tty1.service.d/autologin.conf
+    --perms 0644
+  when: lxc_autologin | default(true) | bool
+
+- name: Reload systemd inside container
+  ansible.builtin.command: pct exec {{ lxc_vmid }} -- systemctl daemon-reload
+  changed_when: false
+  when: lxc_autologin | default(true) | bool
+
+- name: Remove temp autologin file from PVE host
+  ansible.builtin.file:
+    path: /tmp/lxc-autologin-{{ lxc_vmid }}.conf
+    state: absent
+  when: lxc_autologin | default(true) | bool

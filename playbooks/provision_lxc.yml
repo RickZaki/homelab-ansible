@@ -1,0 +1,38 @@
+---
+# provision_lxc.yml — Generic LXC provisioner.
+#
+# Provisions any LXC container from any community-scripts URL.
+# Pass required vars via -e or a vars file; all others have defaults.
+#
+# Required:
+#   lxc_vmid        — Container ID (e.g. 110)
+#   lxc_hostname    — Hostname inside the container
+#   lxc_script_url  — Community script URL
+#
+# Usage:
+#   ansible-playbook playbooks/provision_lxc.yml \
+#     -e lxc_vmid=110 \
+#     -e lxc_hostname=mycontainer \
+#     -e "lxc_script_url=https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh" \
+#     [--limit pve01]
+
+- name: Provision LXC container
+  hosts: ProxmoxVirtualEnvironments
+  become: true
+  gather_facts: false
+
+  vars:
+    lxc_cores: 1
+    lxc_memory: 512
+    lxc_root_size: 8
+    lxc_bridge: vmbr0
+    lxc_vlan: ""
+    lxc_dns: ""                    # empty = inherit PVE node DNS
+    lxc_storage: local-zfs
+    lxc_features: ""
+    lxc_autologin: true
+    lxc_extra_mounts: []
+
+  tasks:
+    - name: Provision LXC {{ lxc_vmid }} ({{ lxc_hostname }})
+      ansible.builtin.import_tasks: ../tasks/provision_lxc.yml
