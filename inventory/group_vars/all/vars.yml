@@ -1,0 +1,9 @@
+
+---
+glances_venv: /opt/glances
+glances_bind: "0.0.0.0"
+glances_port: 61208
+glances_version: latest
+glances_extras: web        # pip extras: "web" (web UI only) or "all" (web + exporters + docker etc.)
+
+service_account_pubkey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN6WZIHjrF1djO0t/mHGONKCIqJyizPdSu+WmSTUmDiU ansible@home.RickZaki.com"
