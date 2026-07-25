@@ -1,0 +1,32 @@
+---
+# delete_lxc.yml — Stop and destroy an LXC container.
+#
+# WARNING: Destructive and irreversible. Use for test containers only.
+#
+# target_host MUST be passed explicitly to prevent accidental deletion.
+#
+# Usage:
+#   ansible-playbook playbooks/delete_lxc.yml -e target_host=gitlab-runner-82
+
+- name: Stop and destroy LXC container
+  hosts: "{{ target_host | mandatory('Pass -e target_host=<hostname> — this playbook is destructive') }}"
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check LXC status
+      ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      register: lxc_status
+      changed_when: false
+      failed_when: false
+
+    - name: Stop LXC if running
+      ansible.builtin.command: /usr/sbin/pct stop {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      when: "'running' in lxc_status.stdout"
+
+    - name: Destroy LXC
+      ansible.builtin.command: /usr/sbin/pct destroy {{ proxmox_vmid }} --purge
+      delegate_to: "{{ pve_node }}"
+      when: lxc_status.rc == 0

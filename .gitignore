@@ -1,1 +1,3 @@
 .ssh/
+.vault_pass
+.envrc

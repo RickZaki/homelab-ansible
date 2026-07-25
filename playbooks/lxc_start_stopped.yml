@@ -1,0 +1,38 @@
+---
+- name: Check and start stopped LXCs
+  hosts: GitLab_runners
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check LXC status
+      ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      register: lxc_status
+      changed_when: false
+      failed_when: false
+
+    - name: Record if stopped
+      ansible.builtin.set_fact:
+        was_stopped: true
+      when:
+        - lxc_status.rc == 0
+        - "'stopped' in lxc_status.stdout"
+
+    - name: Start stopped LXC
+      ansible.builtin.command: /usr/sbin/pct start {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      when: was_stopped | default(false)
+
+    - name: Wait for LXC to be running
+      ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      register: lxc_wait
+      until: "'running' in lxc_wait.stdout"
+      retries: 12
+      delay: 5
+      when: was_stopped | default(false)
+
+    - name: Allow services time to initialize
+      ansible.builtin.pause:
+        seconds: 15
+      when: was_stopped | default(false)

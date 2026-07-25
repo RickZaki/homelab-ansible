@@ -1,0 +1,36 @@
+---
+# group_vars/gitlab_runners/vars.yml
+# Non-secret configuration for all GitLab Runner hosts.
+#
+# Secrets live in group_vars/gitlab_runners/vault.yml (Ansible Vault encrypted).
+
+# ------------------------------------------------------------------ #
+# GitLab instance                                                      #
+# ------------------------------------------------------------------ #
+gitlab_url: "https://gitlab.home.rickzaki.com"   # update to your GitLab URL
+
+# Indirection: the real value lives in vault.yml as vault_gitlab_api_token.
+gitlab_api_token: "{{ vault_gitlab_api_token }}"
+
+# ------------------------------------------------------------------ #
+# Runner identity & behaviour                                          #
+# ------------------------------------------------------------------ #
+runner_description: "{{ inventory_hostname }}"
+
+runner_tags:
+  - docker
+  - linux
+
+runner_concurrent: 4
+
+runner_type: instance_type   # or group_type / project_type
+
+runner_untagged: true
+
+# ------------------------------------------------------------------ #
+# Docker executor defaults                                             #
+# ------------------------------------------------------------------ #
+runner_docker_image: "alpine:latest"
+
+runner_docker_volumes:
+  - /cache

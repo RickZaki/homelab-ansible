@@ -14,6 +14,8 @@
 #   # Skip reboots entirely — reboot manually later
 #   ansible-playbook playbooks/apt_upgrade.yml --skip-tags reboot
 
+- import_playbook: lxc_start_stopped.yml
+
 - name: APT update and upgrade
   hosts: apt_enabled
   become: true
@@ -51,3 +53,5 @@
         post_reboot_delay: 30
       when: reboot_required.stat.exists
       tags: reboot
+
+- import_playbook: lxc_stop_restored.yml

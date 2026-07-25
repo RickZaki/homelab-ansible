@@ -6,6 +6,11 @@
 #   PATH="/tmp/silent-pve:$PATH" bash -c "$(curl -fsSL https://...)" < /dev/null
 #
 # Selections are returned via stderr, same protocol as real whiptail.
+#
+# The following env vars are honoured (set them before running the script):
+#   var_brg               — bridge interface name (e.g. vmbr1)
+#   var_container_storage — storage pool for rootfs (e.g. local-zfs)
+#   var_template_storage  — storage pool for downloaded templates (e.g. local)
 
 # --passwordbox: empty string → triggers automatic login
 if [[ "$*" == *"--passwordbox"* ]]; then
@@ -35,14 +40,32 @@ if [[ "$*" == *"--radiolist"* ]]; then
 fi
 
 # --menu: return a value based on context clues in the argument list.
-# Handles bridge selection, IPv4/IPv6 method, and the app-defaults diff menu.
+# Handles bridge selection, storage selection, IPv4/IPv6 method, and the
+# app-defaults diff menu.
 if [[ "$*" == *"--menu"* ]]; then
-  if   [[ "$*" == *"vmbr"* ]] && [[ -n "$var_brg" ]]; then echo "$var_brg" >&2  # bridge selection
+  if   [[ "$*" == *"vmbr"* ]] && [[ -n "$var_brg" ]]; then
+    echo "$var_brg" >&2              # bridge selection: return configured bridge
   elif [[ "$*" == *"dhcp"* ]];         then echo "dhcp" >&2          # IPv4: prefer DHCP
   elif [[ "$*" == *"none"* ]];         then echo "none" >&2          # IPv6: prefer none
   elif [[ "$*" == *"Keep Current"* ]]; then echo "Keep Current" >&2  # app-defaults diff menu
   else
-    # Fallback: extract the first tag from the menu list.
+    # Storage or template-version selection: scan the option list for
+    # var_container_storage or var_template_storage and prefer those if present.
+    # The community script shows these dialogs when multiple choices are available;
+    # var_container_storage / var_template_storage are not part of the upstream
+    # var_* universe but are passed via Ansible's environment block.
+    for needle in "$var_container_storage" "$var_template_storage"; do
+      if [[ -n "$needle" ]]; then
+        for arg in "$@"; do
+          if [[ "$arg" == "$needle" ]]; then
+            echo "$needle" >&2
+            exit 0
+          fi
+        done
+      fi
+    done
+
+    # Final fallback: extract the first tag from the menu list.
     # Menu args: ... <height> <width> <listheight> <tag> <item> ...
     # The first tag appears immediately after the third consecutive integer.
     args=("$@")
