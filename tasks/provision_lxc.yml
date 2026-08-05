@@ -16,6 +16,7 @@
 #   lxc_root_size        — root disk in GB
 #   lxc_bridge           — network bridge  (e.g. vmbr0)
 #   lxc_vlan             — VLAN tag        (empty string = remove tag)
+#   lxc_mac              — NIC MAC address (e.g. "BC:24:11:AA:BB:CC"; omit = auto)
 #   lxc_dns              — DNS nameserver  (empty = inherit PVE node DNS)
 #   lxc_storage          — storage pool    (e.g. local-zfs); required when
 #                          adding new extra mounts to an existing container
@@ -25,6 +26,28 @@
 #                          e.g. [{id: mp0, size: 8, path: /var/lib/docker}]
 #                          Mounts present on the container but absent from this
 #                          list will be detached (storage volume preserved).
+#
+# Community script integration:
+#   Non-interactive execution uses two mechanisms:
+#   1. A minimal whiptail wrapper (deployed to /tmp/silent-pve/whiptail)
+#      intercepts whiptail dialogs — selects "Default Install" at the
+#      initial menu, matches var_container_storage for storage selection,
+#      and returns sane defaults for all other dialogs.
+#   2. Environment variables handle everything else:
+#        var_unattended=yes — skips read prompts (e.g. LXC stack upgrade)
+#        var_net=dhcp       — explicitly sets DHCP networking
+#        PHS_SILENT=1       — suppresses cosmetic output
+#   All container settings are passed via var_* environment variables.
+#
+# Prerequisites:
+#   The community script downloads a CT template on first use. On nodes with
+#   slow internet this can exceed the 600 s timeout.  Pre-stage the template
+#   to avoid this:
+#     pveam update
+#     pveam download local debian-13-standard_<ver>_amd64.tar.zst
+#   Or copy from a node that already has it cached:
+#     scp pve01:/var/lib/vz/template/cache/debian-*.tar.zst \
+#         pve99:/var/lib/vz/template/cache/
 
 # ------------------------------------------------------------------ #
 # Defaults                                                             #
@@ -51,17 +74,28 @@
 - name: Create container {{ lxc_vmid }} via community script
   when: pct_status.rc != 0
   block:
-    - name: Install whiptail wrapper
-      ansible.builtin.import_tasks: silent_whiptail_install.yml
+    - name: Create whiptail wrapper directory
+      ansible.builtin.file:
+        path: /tmp/silent-pve
+        state: directory
+        mode: "0755"
+
+    - name: Install minimal whiptail wrapper
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/silent-whiptail"
+        dest: /tmp/silent-pve/whiptail
+        mode: "0755"
 
     - name: Run community script ({{ lxc_script_url | basename }})
       ansible.builtin.shell: |
         export PATH="/tmp/silent-pve:$PATH"
-        timeout 300 bash -c "$(curl -fsSL {{ lxc_script_url }})" < /dev/null
+        timeout 600 bash -c "$(curl -fsSL {{ lxc_script_url }})" < /dev/null
       register: community_script
       # rc 0   = clean exit
-      # rc 124 = timeout — container already created, in-container apt phase
-      #          hung waiting for network; safe to continue
+      # rc 124 = timeout — in-container apt phase hung waiting for network;
+      #          safe to continue only if the container config was created.
+      #          The post-create check below catches the case where timeout
+      #          fires before pct create completes (e.g. slow template download).
       failed_when: community_script.rc not in [0, 124]
       args:
         executable: /bin/bash
@@ -74,13 +108,37 @@
         var_disk: "{{ lxc_root_size | default('') }}"
         var_brg: "{{ lxc_bridge | default('') }}"
         var_vlan: "{{ lxc_vlan | default('') }}"
+        var_mac: "{{ lxc_mac | default('') }}"
         var_dns: "{{ lxc_dns | default('') }}"
+        var_net: "dhcp"
+        var_unattended: "yes"
+        PHS_SILENT: "1"
         var_container_storage: "{{ lxc_storage | default('') }}"
         var_template_storage: "local"
 
+    - name: Check container {{ lxc_vmid }} exists after community script
+      ansible.builtin.command: pct status {{ lxc_vmid }}
+      register: pct_post_create
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with community script output if container was not created
+      ansible.builtin.fail:
+        msg: |
+          Container {{ lxc_vmid }} was not created. community script rc={{ community_script.rc }}
+          Check whether var_ctid is still the correct env var name for {{ lxc_script_url | basename }}.
+          Run 'pct list' on the PVE node to see if a container was created under a different VMID.
+          --- stdout ---
+          {{ community_script.stdout | default('(empty)') }}
+          --- stderr ---
+          {{ community_script.stderr | default('(empty)') }}
+      when: pct_post_create.rc != 0
+
   always:
     - name: Remove whiptail wrapper
-      ansible.builtin.import_tasks: silent_whiptail_remove.yml
+      ansible.builtin.file:
+        path: /tmp/silent-pve
+        state: absent
 
 - name: Verify container was created successfully
   ansible.builtin.command: /usr/sbin/pct status {{ lxc_vmid }}
@@ -129,6 +187,7 @@
     current_rootfs_size: "{{ (pct_config.stdout | regex_search('rootfs:.*size=(\\d+)G', '\\1') or ['0']) | first | int }}"
     current_bridge:      "{{ (pct_config.stdout | regex_search('bridge=([^,\\n]+)',      '\\1') or [''])  | first }}"
     current_vlan:        "{{ (pct_config.stdout | regex_search('tag=([^,\\n]+)',          '\\1') or [''])  | first }}"
+    current_mac:         "{{ (pct_config.stdout | regex_search('hwaddr=([^,\\n]+)',       '\\1') or [''])  | first }}"
     current_dns:         "{{ (pct_config.stdout | regex_search('(?m)^nameserver: (.+)',  '\\1') or [''])  | first }}"
   when: pct_status.rc == 0
 
@@ -232,6 +291,23 @@
     - pct_status.rc == 0
     - lxc_vlan is defined
     - current_vlan != (lxc_vlan | string)
+  changed_when: true
+
+- name: Update network MAC address if changed
+  ansible.builtin.shell: |
+    current=$(pct config {{ lxc_vmid }} | grep '^net0:' | sed 's/^net0: //')
+    if echo "$current" | grep -q 'hwaddr='; then
+      new=$(echo "$current" | sed "s/hwaddr=[^,]*/hwaddr=$DESIRED_MAC/")
+    else
+      new="${current},hwaddr=$DESIRED_MAC"
+    fi
+    pct set {{ lxc_vmid }} --net0 "$new"
+  environment:
+    DESIRED_MAC: "{{ lxc_mac }}"
+  when:
+    - pct_status.rc == 0
+    - lxc_mac is defined
+    - current_mac | upper != lxc_mac | upper
   changed_when: true
 
 - name: Update DNS nameserver if changed

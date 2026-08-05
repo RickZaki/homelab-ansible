@@ -1,83 +1,48 @@
-#!/usr/bin/env bash
-# silent-whiptail — fake whiptail binary for running Proxmox community scripts
-# non-interactively under Ansible (or any non-TTY environment).
-#
-# Usage: inject into PATH before the community script runs, e.g.:
-#   PATH="/tmp/silent-pve:$PATH" bash -c "$(curl -fsSL https://...)" < /dev/null
-#
-# Selections are returned via stderr, same protocol as real whiptail.
-#
-# The following env vars are honoured (set them before running the script):
-#   var_brg               — bridge interface name (e.g. vmbr1)
-#   var_container_storage — storage pool for rootfs (e.g. local-zfs)
-#   var_template_storage  — storage pool for downloaded templates (e.g. local)
+#!/bin/bash
+# Minimal whiptail wrapper — selects defaults for community-scripts.
+# Deployed to /tmp/silent-pve/whiptail and prepended to PATH so the
+# community script calls this instead of the real whiptail.
 
-# --passwordbox: empty string → triggers automatic login
-if [[ "$*" == *"--passwordbox"* ]]; then
-  echo "" >&2
-  exit 0
-fi
-
-# --inputbox: echo back the default value (last positional arg).
-# The community scripts pre-populate defaults from var_* env vars, so this
-# returns exactly the value we want without having to re-specify it here.
-if [[ "$*" == *"--inputbox"* ]]; then
-  echo "${@: -1}" >&2
-  exit 0
-fi
-
-# --radiolist: return the tag of the item pre-selected with ON.
-# e.g. container type radiolist has "1 Unprivileged ON 0 Privileged OFF"
-if [[ "$*" == *"--radiolist"* ]]; then
+# --menu: return "Default Install" for the initial menu, or match
+#         var_container_storage / var_template_storage for storage menus.
+if [[ "$*" == *"--menu"* ]]; then
+  for needle in "$var_container_storage" "$var_template_storage" "$var_brg"; do
+    [[ -n "$needle" ]] && for arg in "$@"; do
+      [[ "$arg" == "$needle" ]] && { echo "$needle" >&2; exit 0; }
+    done
+  done
+  if [[ "$*" == *"dhcp"* ]]; then echo "dhcp" >&2; exit 0; fi
+  if [[ "$*" == *"none"* ]]; then echo "none" >&2; exit 0; fi
+  # Fallback: extract the first tag from the menu list.
   args=("$@")
-  for (( i=2; i<${#args[@]}; i++ )); do
-    if [[ "${args[$i]^^}" == "ON" ]]; then
-      echo "${args[$((i-2))]}" >&2
-      exit 0
+  count=0
+  for (( i=0; i<${#args[@]}; i++ )); do
+    if [[ "${args[$i]}" =~ ^[0-9]+$ ]]; then
+      (( ++count == 3 )) && { echo "${args[$((i+1))]}" >&2; exit 0; }
     fi
   done
   exit 0
 fi
 
-# --menu: return a value based on context clues in the argument list.
-# Handles bridge selection, storage selection, IPv4/IPv6 method, and the
-# app-defaults diff menu.
-if [[ "$*" == *"--menu"* ]]; then
-  if   [[ "$*" == *"vmbr"* ]] && [[ -n "$var_brg" ]]; then
-    echo "$var_brg" >&2              # bridge selection: return configured bridge
-  elif [[ "$*" == *"dhcp"* ]];         then echo "dhcp" >&2          # IPv4: prefer DHCP
-  elif [[ "$*" == *"none"* ]];         then echo "none" >&2          # IPv6: prefer none
-  elif [[ "$*" == *"Keep Current"* ]]; then echo "Keep Current" >&2  # app-defaults diff menu
-  else
-    # Storage or template-version selection: scan the option list for
-    # var_container_storage or var_template_storage and prefer those if present.
-    # The community script shows these dialogs when multiple choices are available;
-    # var_container_storage / var_template_storage are not part of the upstream
-    # var_* universe but are passed via Ansible's environment block.
-    for needle in "$var_container_storage" "$var_template_storage"; do
-      if [[ -n "$needle" ]]; then
-        for arg in "$@"; do
-          if [[ "$arg" == "$needle" ]]; then
-            echo "$needle" >&2
-            exit 0
-          fi
-        done
-      fi
+# --radiolist: return ON item, or match storage env vars.
+if [[ "$*" == *"--radiolist"* ]]; then
+  args=("$@")
+  for (( i=2; i<${#args[@]}; i++ )); do
+    [[ "${args[$i]^^}" == "ON" ]] && { echo "${args[$((i-2))]}" >&2; exit 0; }
+  done
+  for needle in "$var_container_storage" "$var_template_storage"; do
+    [[ -n "$needle" ]] && for (( i=0; i<${#args[@]}; i++ )); do
+      [[ "${args[$i]}" == *"$needle"* ]] && { echo "${args[$i]}" >&2; exit 0; }
     done
-
-    # Final fallback: extract the first tag from the menu list.
-    # Menu args: ... <height> <width> <listheight> <tag> <item> ...
-    # The first tag appears immediately after the third consecutive integer.
-    args=("$@")
-    count=0
-    for (( i=0; i<${#args[@]}; i++ )); do
-      if [[ "${args[$i]}" =~ ^[0-9]+$ ]]; then
-        (( ++count == 3 )) && { echo "${args[$((i+1))]}" >&2; exit 0; }
-      fi
-    done
-  fi
+  done
   exit 0
 fi
 
-# --yesno, --msgbox, --textbox, etc.: simulate OK / YES
+# --inputbox: return the default value (last arg).
+if [[ "$*" == *"--inputbox"* ]]; then echo "${@: -1}" >&2; exit 0; fi
+
+# --passwordbox: empty password triggers autologin.
+if [[ "$*" == *"--passwordbox"* ]]; then echo "" >&2; exit 0; fi
+
+# Everything else (--yesno, --msgbox): simulate OK.
 exit 0

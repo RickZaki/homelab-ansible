@@ -1,7 +1,8 @@
 ---
-# provision_gitlab_runner_lxc.yml — Create one Debian LXC per PVE node for GitLab Runners.
+# provision_gitlab_runner_lxc.yml — Create one Debian LXC per GitLab Runner host.
 #
-# Thin wrapper around tasks/provision_lxc.yml with GitLab-runner-specific settings.
+# Targets GitLab_runners and delegates all PVE-side provisioning to pve_node,
+# so a single --limit gitlab-runner-XX covers the full setup flow.
 #
 # Container spec per node:
 #   VMID    : 133711{node_id}           (e.g. 13371101 on pve01, 13371182 on pve82)
@@ -12,17 +13,10 @@
 #   Type    : unprivileged
 #
 # Usage:
-#   # All nodes
-#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml
-#
-#   # Single node
-#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit pve01
-#
-#   # Override storage pool
-#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml -e lxc_storage=local-zfs
+#   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit gitlab-runner-82
 
 - name: Provision GitLab Runner LXC on each PVE node
-  hosts: ProxmoxVirtualEnvironments
+  hosts: GitLab_runners
   become: true
   gather_facts: false
 
@@ -39,7 +33,6 @@
     # --- network ------------------------------------------------------- #
     lxc_bridge: vmbr1
     lxc_vlan: "599"
-    lxc_dns: ""                    # empty = inherit PVE node DNS
 
     # --- storage ------------------------------------------------------- #
     lxc_storage: local-zfs
@@ -58,3 +51,4 @@
 
   tasks:
     - ansible.builtin.import_tasks: ../tasks/provision_lxc.yml
+      delegate_to: "{{ pve_node }}"

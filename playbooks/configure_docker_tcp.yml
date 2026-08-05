@@ -1,0 +1,93 @@
+---
+# configure_docker_tcp.yml — Enable Docker TCP socket on target hosts.
+#
+# Configures Docker to listen on both the Unix socket and a TCP socket.
+# Uses a systemd drop-in to remove the conflicting -H flag from the
+# default service unit, then declares hosts via /etc/docker/daemon.json.
+#
+# WARNING: TCP without TLS exposes the Docker API on the network.
+#   Bind to 127.0.0.1 unless you need remote access, and restrict
+#   with firewall rules when binding to 0.0.0.0.
+#
+# Vars (with defaults):
+#   docker_tcp_host  : "127.0.0.1"   — address to bind
+#   docker_tcp_port  : 2375           — port to listen on
+#
+# Usage:
+#   ansible-playbook playbooks/configure_docker_tcp.yml
+#   ansible-playbook playbooks/configure_docker_tcp.yml -e docker_tcp_host=0.0.0.0
+
+- name: Configure Docker TCP socket
+  hosts: "{{ docker_target_hosts | default('docker_enabled') }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    docker_tcp_host: "0.0.0.0"
+    docker_tcp_port: 2375
+    docker_override_dir: /etc/systemd/system/docker.service.d
+
+  handlers:
+    - name: Reload systemd and restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+    # ------------------------------------------------------------------ #
+    # daemon.json — declare hosts so dockerd picks them up               #
+    # ------------------------------------------------------------------ #
+
+    - name: Configure Docker daemon hosts in daemon.json
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "hosts": [
+              "tcp://{{ docker_tcp_host }}:{{ docker_tcp_port }}",
+              "unix:///var/run/docker.sock"
+            ]
+          }
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd and restart Docker
+
+    # ------------------------------------------------------------------ #
+    # systemd override — strip the conflicting -H fd:// from ExecStart   #
+    # daemon.json hosts and the -H CLI flag cannot coexist               #
+    # ------------------------------------------------------------------ #
+
+    - name: Ensure Docker systemd override directory exists
+      ansible.builtin.file:
+        path: "{{ docker_override_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Drop systemd override to remove -H flag from ExecStart
+      ansible.builtin.copy:
+        dest: "{{ docker_override_dir }}/override.conf"
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd and restart Docker
+
+    # ------------------------------------------------------------------ #
+    # Verify                                                              #
+    # ------------------------------------------------------------------ #
+
+    - name: Confirm Docker is listening on TCP
+      ansible.builtin.command: ss -tlnp "sport = :{{ docker_tcp_port }}"
+      register: docker_tcp_check
+      changed_when: false
+
+    - name: Show TCP socket status
+      ansible.builtin.debug:
+        msg: "{{ docker_tcp_check.stdout_lines }}"
