@@ -135,6 +135,10 @@ Reusable task files included by multiple playbooks via `include_tasks`:
 | `tasks/provision_lxc.yml` | Create or reconcile LXC containers | `provision_lxc`, `provision_gitlab_runner_lxc` |
 | `tasks/community_scripts_update.yml` | Run community script update command | `update_community_scipts` |
 
+## Lessons Learned
+
+See [LESSONS_LEARNED.md](LESSONS_LEARNED.md) for gotchas and insights from building and validating these playbooks against a production Proxmox cluster.
+
 ## Design Patterns
 
 ### LXC Start/Stop Lifecycle
