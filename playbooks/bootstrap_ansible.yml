@@ -13,7 +13,7 @@
 
 
 - name: Bootstrap ansible service account
-  hosts: ansible_enabled
+  hosts: ssh_capable
   become: true
   gather_facts: false
 

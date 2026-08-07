@@ -1,0 +1,80 @@
+---
+# do_release_upgrade.yml — Non-interactive Ubuntu release upgrade.
+#
+# Jumps one LTS release at a time (e.g. 22.04 -> 24.04).
+# Run again to hop to the next LTS if needed.
+#
+# Usage:
+#   ansible-playbook playbooks/do_release_upgrade.yml
+#   ansible-playbook playbooks/do_release_upgrade.yml --limit netRicks
+
+- name: Ubuntu release upgrade
+  hosts: ubuntu_servers
+  become: true
+  gather_facts: false
+  serial: 1
+
+  pre_tasks:
+    - name: Start stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  post_tasks:
+    - name: Restore stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
+
+  tasks:
+    - name: Show current release
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} is running {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+    - name: Install update-manager-core
+      ansible.builtin.apt:
+        name: update-manager-core
+        state: present
+        update_cache: true
+
+    - name: Update and upgrade all packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+
+    - name: Ensure Prompt=lts in release-upgrades config
+      ansible.builtin.lineinfile:
+        path: /etc/update-manager/release-upgrades
+        regexp: '^Prompt='
+        line: 'Prompt=lts'
+
+    - name: Run do-release-upgrade
+      ansible.builtin.shell:
+        cmd: DEBIAN_FRONTEND=noninteractive do-release-upgrade -f DistUpgradeViewNonInteractive < /dev/null
+      args:
+        executable: /bin/bash
+      register: upgrade_result
+      changed_when:
+        - "'No new release found' not in upgrade_result.stdout"
+        - "'no development version' not in upgrade_result.stdout | lower"
+      failed_when:
+        - upgrade_result.rc != 0
+        - "'No new release found' not in upgrade_result.stdout"
+        - "'no development version' not in upgrade_result.stdout | lower"
+
+    - name: Reboot after upgrade
+      ansible.builtin.raw: shutdown -r now
+      when: upgrade_result.changed
+
+    - name: Wait for host to come back
+      ansible.builtin.wait_for_connection:
+        delay: 30
+        timeout: 300
+      when: upgrade_result.changed
+
+    - name: Re-gather facts after upgrade
+      ansible.builtin.setup:
+      when: upgrade_result.changed
+
+    - name: Report result
+      ansible.builtin.debug:
+        msg: "{{ 'Upgraded to ' + ansible_facts['distribution_version'] if upgrade_result.changed else 'Already on latest LTS' }}"

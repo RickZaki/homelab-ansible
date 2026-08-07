@@ -11,9 +11,7 @@
 #   ansible-playbook playbooks/setup_gitlab_runners.yml --limit gitlab-runner-82
 
 - import_playbook: provision_gitlab_runner_lxc.yml
-- import_playbook: lxc_start_stopped.yml
 - import_playbook: deploy_gitlab_runner.yml
 - import_playbook: configure_docker_tcp.yml
   vars:
     docker_target_hosts: GitLab_runners
-- import_playbook: lxc_stop_restored.yml

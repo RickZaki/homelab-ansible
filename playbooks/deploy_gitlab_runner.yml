@@ -41,6 +41,14 @@
       - docker-buildx-plugin
       - docker-compose-plugin
 
+  pre_tasks:
+    - name: Start stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+
+  post_tasks:
+    - name: Restore stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
+
   tasks:
     # ------------------------------------------------------------------ #
     # Prerequisites                                                        #

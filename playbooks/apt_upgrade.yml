@@ -14,13 +14,19 @@
 #   # Skip reboots entirely — reboot manually later
 #   ansible-playbook playbooks/apt_upgrade.yml --skip-tags reboot
 
-- import_playbook: lxc_start_stopped.yml
-
 - name: APT update and upgrade
-  hosts: apt_enabled
+  hosts: apt_capable
   become: true
   gather_facts: false
   serial: "{{ batch_size | default(omit) }}"  # use --extra-vars batch_size=1 for rolling reboots
+
+  pre_tasks:
+    - name: Start stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+
+  post_tasks:
+    - name: Restore stopped LXCs
+      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
 
   tasks:
     - name: Update apt cache and upgrade packages
@@ -53,5 +59,3 @@
         post_reboot_delay: 30
       when: reboot_required.stat.exists
       tags: reboot
-
-- import_playbook: lxc_stop_restored.yml

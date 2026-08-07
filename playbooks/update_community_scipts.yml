@@ -1,0 +1,15 @@
+---
+# lxc_app_update.yml — Run Proxmox Helper Scripts 'update' on updateable LXCs.
+#
+# Usage:
+#   ansible-playbook playbooks/lxc_app_update.yml
+#
+
+- name: Run PHS app update on LXCs
+  hosts: communityScriptUpdate_capable
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Update app
+      ansible.builtin.import_tasks: ../tasks/community_scripts_update.yml

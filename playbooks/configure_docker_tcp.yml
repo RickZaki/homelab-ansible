@@ -18,7 +18,7 @@
 #   ansible-playbook playbooks/configure_docker_tcp.yml -e docker_tcp_host=0.0.0.0
 
 - name: Configure Docker TCP socket
-  hosts: "{{ docker_target_hosts | default('docker_enabled') }}"
+  hosts: "{{ docker_target_hosts | default('docker_capable') }}"
   become: true
   gather_facts: false
 
