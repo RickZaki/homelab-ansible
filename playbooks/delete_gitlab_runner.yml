@@ -1,0 +1,62 @@
+---
+# delete_gitlab_runner.yml — Unregister a GitLab Runner and destroy its LXC.
+#
+# WARNING: Destructive and irreversible.
+#
+# target_host MUST be passed explicitly to prevent accidental deletion.
+#
+# Usage:
+#   ansible-playbook playbooks/delete_gitlab_runner.yml -e target_host=gitlab-runner-82
+
+- name: Unregister GitLab Runner and destroy LXC
+  hosts: "{{ target_host | mandatory('Pass -e target_host=<hostname> — this playbook is destructive') }}"
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../inventory/group_vars/GitLab_runners/vars.yml
+    - ../inventory/group_vars/GitLab_runners/vault.yml
+
+  tasks:
+    - name: Start stopped LXCs
+      ansible.builtin.import_tasks: ../tasks/lxc_start_stopped.yml
+
+    # ── Unregister runner from GitLab ───────────────────────────────────
+    - name: Read runner authentication token from config.toml
+      ansible.builtin.shell: >
+        grep -A5 'name = "{{ inventory_hostname }}"' /etc/gitlab-runner/config.toml
+        | grep 'token' | head -1 | sed 's/.*= *"\(.*\)"/\1/'
+      register: runner_token_result
+      changed_when: false
+      failed_when: false
+
+    - name: Delete runner from GitLab via API
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/runners"
+        method: DELETE
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        body_format: json
+        body:
+          token: "{{ runner_token_result.stdout }}"
+        status_code: [204, 404]
+      when: runner_token_result.stdout | default('') | length > 0
+      no_log: true
+
+    # ── Destroy LXC ────────────────────────────────────────────────────
+    - name: Check LXC status
+      ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      register: lxc_status
+      changed_when: false
+      failed_when: false
+
+    - name: Stop LXC if running
+      ansible.builtin.command: /usr/sbin/pct stop {{ proxmox_vmid }}
+      delegate_to: "{{ pve_node }}"
+      when: "'running' in lxc_status.stdout"
+
+    - name: Destroy LXC
+      ansible.builtin.command: /usr/sbin/pct destroy {{ proxmox_vmid }} --purge
+      delegate_to: "{{ pve_node }}"
+      when: lxc_status.rc == 0
