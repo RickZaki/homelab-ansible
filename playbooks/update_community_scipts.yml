@@ -11,5 +11,11 @@
   gather_facts: false
 
   tasks:
+    - name: Start stopped LXCs
+      ansible.builtin.import_tasks: ../tasks/lxc_start_stopped.yml
+
     - name: Update app
       ansible.builtin.import_tasks: ../tasks/community_scripts_update.yml
+
+    - name: Stop restored LXCs
+      ansible.builtin.import_tasks: ../tasks/lxc_stop_restored.yml

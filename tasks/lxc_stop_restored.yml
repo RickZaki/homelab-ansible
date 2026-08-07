@@ -1,5 +1,5 @@
 ---
 - name: Shutdown LXC
   ansible.builtin.command: /usr/sbin/pct shutdown {{ proxmox_vmid }} --timeout 60
-  delegate_to: "{{ pve_node }}"
+  delegate_to: "{{ pve_node | default(inventory_hostname) }}"
   when: was_stopped | default(false)

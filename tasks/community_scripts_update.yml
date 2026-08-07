@@ -1,6 +1,6 @@
 ---
 - name: Update app
   ansible.builtin.shell:
-    cmd: PHS_SILENT=1 CTID={{ proxmox_vmid }} update < /dev/null
+    cmd: PHS_SILENT=1 update < /dev/null
   args:
     executable: /bin/bash

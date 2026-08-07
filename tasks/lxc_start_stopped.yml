@@ -1,11 +1,13 @@
 ---
 - name: Check LXC status
   ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
-  delegate_to: "{{ pve_node }}"
+  delegate_to: "{{ pve_node | default(inventory_hostname) }}"
   register: lxc_status
   changed_when: false
   failed_when: false
-  when: proxmox_vmid is defined
+  when:
+    - proxmox_vmid is defined
+    - pve_node is defined
 
 - name: Record if stopped
   ansible.builtin.set_fact:
@@ -17,12 +19,12 @@
 
 - name: Start stopped LXC
   ansible.builtin.command: /usr/sbin/pct start {{ proxmox_vmid }}
-  delegate_to: "{{ pve_node }}"
+  delegate_to: "{{ pve_node | default(inventory_hostname) }}"
   when: was_stopped | default(false)
 
 - name: Wait for LXC to be running
   ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
-  delegate_to: "{{ pve_node }}"
+  delegate_to: "{{ pve_node | default(inventory_hostname) }}"
   register: lxc_wait
   until: "'running' in lxc_wait.stdout"
   retries: 12

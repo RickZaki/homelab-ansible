@@ -1,3 +1,4 @@
 .ssh/
 .envrc
 .vault_pass
+validation-checklist.md
