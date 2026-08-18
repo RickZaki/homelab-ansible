@@ -1,6 +1,7 @@
 ---
 # roles/gitlab_runner/tasks/main.yml
-# Install and register a GitLab Runner using the glrt- token workflow (GitLab 17+).
+# Install and register a GitLab Runner using the
+# glrt- token workflow (GitLab 17+).
 #
 # Required vars (typically from group_vars/GitLab_runners/):
 #   gitlab_url, gitlab_api_token, runner_description, runner_tags,
@@ -12,6 +13,7 @@
 
 - name: Download GitLab Runner repository setup script
   ansible.builtin.get_url:
+    # yamllint disable-line rule:line-length
     url: "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh"
     dest: /tmp/gitlab-runner-repo.sh
     mode: "0755"
@@ -50,7 +52,7 @@
   ansible.builtin.shell: |
     grep -q 'name = "{{ runner_description }}"' \
       /etc/gitlab-runner/config.toml 2>/dev/null && echo "yes" || echo "no"
-  register: runner_already_registered
+  register: gitlab_runner_already_registered
   changed_when: false
 
 - name: Create runner via GitLab API and obtain glrt- token
@@ -66,8 +68,8 @@
       tag_list: "{{ runner_tags | join(',') }}"
       run_untagged: "{{ runner_untagged | default(true) }}"
     status_code: 201
-  register: api_runner
-  when: runner_already_registered.stdout == "no"
+  register: gitlab_runner_api_runner
+  when: gitlab_runner_already_registered.stdout == "no"
   no_log: true
 
 - name: Register runner with GitLab using the API-issued token
@@ -75,12 +77,13 @@
     gitlab-runner register
     --non-interactive
     --url "{{ gitlab_url }}"
-    --token "{{ api_runner.json.token }}"
+    --token "{{ gitlab_runner_api_runner.json.token }}"
     --executor "docker"
     --docker-image "{{ runner_docker_image }}"
     --description "{{ runner_description }}"
     --docker-volumes "{{ runner_docker_volumes | join(',') }}"
-  when: runner_already_registered.stdout == "no"
+  changed_when: true
+  when: gitlab_runner_already_registered.stdout == "no"
   no_log: true
 
 # ------------------------------------------------------------------ #
@@ -158,9 +161,9 @@
 
 - name: Show registered runners
   ansible.builtin.command: gitlab-runner list
-  register: runner_list
+  register: gitlab_runner_runner_list
   changed_when: false
 
 - name: Runner list output
   ansible.builtin.debug:
-    msg: "{{ runner_list.stderr_lines }}"
+    msg: "{{ gitlab_runner_runner_list.stderr_lines }}"

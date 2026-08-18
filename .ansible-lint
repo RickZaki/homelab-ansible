@@ -1,0 +1,5 @@
+---
+# These playbooks require -e target_host=... and fail syntax-check
+exclude_paths:
+  - playbooks/delete_gitlab_runner.yml
+  - playbooks/delete_lxc.yml

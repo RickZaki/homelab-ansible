@@ -11,10 +11,12 @@
 #
 # Usage:
 #   ansible-playbook playbooks/configure_docker_tcp.yml
-#   ansible-playbook playbooks/configure_docker_tcp.yml -e docker_tcp_host=127.0.0.1
+#   ansible-playbook playbooks/configure_docker_tcp.yml \
+#     -e docker_tcp_host=127.0.0.1
 
 - name: Configure Docker TCP socket
   hosts: "{{ docker_target_hosts | default('docker_capable') }}"
+  # yamllint disable-line rule:line-length
   become: "{{ ansible_connection | default('ssh') != 'community.proxmox.proxmox_pct_remote' }}"
   gather_facts: false
 

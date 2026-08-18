@@ -14,16 +14,23 @@
     state: present
     update_cache: true
 
-- name: Add Grafana GPG key
-  ansible.builtin.shell: >
-    curl -fsSL https://apt.grafana.com/gpg.key |
-    gpg --dearmor -o /usr/share/keyrings/grafana.gpg
-  args:
+- name: Download Grafana GPG key
+  ansible.builtin.get_url:
+    url: https://apt.grafana.com/gpg.key
+    dest: /tmp/grafana-gpg.key
+    mode: "0644"
+
+- name: Dearmor and install Grafana GPG key
+  ansible.builtin.command:
+    cmd: >-
+      gpg --dearmor -o /usr/share/keyrings/grafana.gpg
+      /tmp/grafana-gpg.key
     creates: /usr/share/keyrings/grafana.gpg
 
 - name: Add Grafana apt repository
   ansible.builtin.copy:
     dest: /etc/apt/sources.list.d/grafana.list
+    # yamllint disable-line rule:line-length
     content: "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main\n"
     mode: "0644"
 

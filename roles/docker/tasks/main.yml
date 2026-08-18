@@ -5,7 +5,9 @@
 
 - name: Set Docker architecture
   ansible.builtin.set_fact:
-    docker_arch: "{{ docker_arch_map[ansible_facts['architecture']] | default('amd64') }}"
+    docker_arch: >-
+      {{ docker_arch_map[ansible_facts['architecture']]
+         | default('amd64') }}
 
 # ------------------------------------------------------------------ #
 # Prerequisites                                                        #
@@ -85,7 +87,9 @@
   failed_when: docker_mountpoint.rc != 0
 
 - name: Report Docker data root
-  ansible.builtin.command: docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'
+  ansible.builtin.command: >-
+    docker info
+    --format '{% raw %}{{.DockerRootDir}}{% endraw %}'
   register: docker_root
   changed_when: false
 
@@ -99,9 +103,9 @@
 
 - name: Pull and run hello-world to verify Docker is functional
   ansible.builtin.command: docker run --rm hello-world
-  register: hello_world
+  register: docker_hello_world
   changed_when: false
 
 - name: Show hello-world output
   ansible.builtin.debug:
-    msg: "{{ hello_world.stdout_lines }}"
+    msg: "{{ docker_hello_world.stdout_lines }}"

@@ -1,5 +1,6 @@
 ---
-# apt_upgrade.yml — Run apt update, dist-upgrade, autoremove, and optional reboot on target hosts.
+# apt_upgrade.yml — Run apt update, dist-upgrade,
+# autoremove, and optional reboot on target hosts.
 #
 # Usage:
 #   # All hosts (no reboot batching)
@@ -16,8 +17,10 @@
 
 - name: APT update and upgrade
   hosts: apt_capable
+  # yamllint disable-line rule:line-length
   become: "{{ ansible_connection | default('ssh') != 'community.proxmox.proxmox_pct_remote' }}"
   gather_facts: false
+  # yamllint disable-line rule:line-length
   serial: "{{ batch_size | default(omit) }}"  # use --extra-vars batch_size=1 for rolling reboots
 
   pre_tasks:
@@ -51,6 +54,7 @@
 
     - name: Report reboot status
       ansible.builtin.debug:
+        # yamllint disable-line rule:line-length
         msg: "{{ 'REBOOT REQUIRED' if reboot_required.stat.exists else 'No reboot required' }}"
 
     - name: Reboot if required

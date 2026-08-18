@@ -1,11 +1,14 @@
 ---
-# deregister_gitlab_deploy_key.yml — Remove an SSH deploy key from a GitLab repo.
+# deregister_gitlab_deploy_key.yml —
+# Remove an SSH deploy key from a GitLab repo.
 #
 # Reads the host's public key and removes the matching deploy key via the
 # GitLab API. Idempotent — skips if no matching key is found.
 #
 # Usage:
+# yamllint disable-line rule:line-length
 #   ansible-playbook playbooks/deregister_gitlab_deploy_key.yml --limit prometheus
+# yamllint disable-line rule:line-length
 #   ansible-playbook playbooks/deregister_gitlab_deploy_key.yml --limit prometheus \
 #     -e gitlab_project_path=homelab/other/repo
 
@@ -33,6 +36,7 @@
 
     - name: List deploy keys on GitLab repo
       ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
         url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
         method: GET
         headers:
@@ -44,13 +48,16 @@
 
     - name: Find matching deploy key ID
       ansible.builtin.set_fact:
+        # yamllint disable-line rule:line-length
         deploy_key_id: "{{ (existing_keys.json | selectattr('key', 'equalto', deploy_key.stdout) | first).id }}"
       when:
         - deploy_key.rc == 0
+        # yamllint disable-line rule:line-length
         - deploy_key.stdout in (existing_keys.json | map(attribute='key') | list)
 
     - name: Remove deploy key from GitLab repo
       ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
         url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys/{{ deploy_key_id }}"
         method: DELETE
         headers:
@@ -61,4 +68,5 @@
 
     - name: Deploy key status
       ansible.builtin.debug:
+        # yamllint disable-line rule:line-length
         msg: "{{ 'Deploy key removed from ' + gitlab_project_path if deploy_key_id is defined else 'No matching deploy key found' }}"

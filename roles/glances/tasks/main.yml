@@ -28,7 +28,8 @@
       After=network.target
 
       [Service]
-      ExecStart={{ glances_venv }}/bin/glances -w -B {{ glances_bind }} -p {{ glances_port }}
+      ExecStart={{ glances_venv }}/bin/glances \
+        -w -B {{ glances_bind }} -p {{ glances_port }}
       Restart=always
       User=root
       Environment="PATH={{ glances_venv }}/bin:/usr/bin:/usr/local/bin"

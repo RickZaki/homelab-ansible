@@ -1,5 +1,6 @@
 ---
-# configure_prometheus.yml — Full Prometheus setup: install, git, deploy key, clone config.
+# configure_prometheus.yml — Full Prometheus setup:
+# install, git, deploy key, clone config.
 #
 # Usage:
 #   ansible-playbook playbooks/configure_prometheus.yml
@@ -20,6 +21,7 @@
     gitlab_url: "https://{{ gitlab_host }}"
     gitlab_project_path: homelab/services/ops/prometheus-config
     gitlab_api_token: "{{ vault_gitlab_api_token }}"
+    # yamllint disable-line rule:line-length
     prometheus_config_repo: "git@{{ gitlab_host }}:{{ gitlab_project_path }}.git"
 
   vars_files:
@@ -65,6 +67,7 @@
 
     - name: Check if deploy key already exists on GitLab
       ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
         url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
         method: GET
         headers:
@@ -75,6 +78,7 @@
 
     - name: Add deploy key to GitLab repo
       ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
         url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
         method: POST
         headers:
@@ -85,6 +89,7 @@
           key: "{{ deploy_key.stdout }}"
           can_push: false
         status_code: 201
+      # yamllint disable-line rule:line-length
       when: deploy_key.stdout not in (existing_keys.json | map(attribute='key') | list)
       no_log: true
 

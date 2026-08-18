@@ -6,10 +6,14 @@
 # target_host MUST be passed explicitly to prevent accidental deletion.
 #
 # Usage:
-#   ansible-playbook playbooks/delete_gitlab_runner.yml -e target_host=gitlab-runner-82
+#   ansible-playbook playbooks/delete_gitlab_runner.yml \
+#     -e target_host=gitlab-runner-82
 
 - name: Unregister GitLab Runner and destroy LXC
-  hosts: "{{ target_host | mandatory('Pass -e target_host=<hostname> — this playbook is destructive') }}"
+  hosts: >-
+    {{ target_host | mandatory(
+    'Pass -e target_host=<hostname> —
+    this playbook is destructive') }}
   become: false
   gather_facts: false
 
@@ -24,7 +28,8 @@
     # ── Unregister runner from GitLab ───────────────────────────────────
     - name: Read runner authentication token from config.toml
       ansible.builtin.shell: >
-        grep -A5 'name = "{{ inventory_hostname }}"' /etc/gitlab-runner/config.toml
+        grep -A5 'name = "{{ inventory_hostname }}"'
+        /etc/gitlab-runner/config.toml
         | grep 'token' | head -1 | sed 's/.*= *"\(.*\)"/\1/'
       register: runner_token_result
       changed_when: false

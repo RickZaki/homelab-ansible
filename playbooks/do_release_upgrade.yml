@@ -1,4 +1,5 @@
 ---
+# yamllint disable rule:line-length
 # do_release_upgrade.yml — Non-interactive Ubuntu release upgrade.
 #
 # Jumps one LTS release at a time (e.g. 22.04 -> 24.04).
@@ -7,6 +8,7 @@
 # Usage:
 #   ansible-playbook playbooks/do_release_upgrade.yml
 #   ansible-playbook playbooks/do_release_upgrade.yml --limit netRicks
+# yamllint enable rule:line-length
 
 - name: Ubuntu release upgrade
   hosts: ubuntu_servers
@@ -28,7 +30,10 @@
   tasks:
     - name: Show current release
       ansible.builtin.debug:
-        msg: "{{ inventory_hostname }} is running {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+        msg: >-
+          {{ inventory_hostname }} is running {{
+          ansible_facts['distribution'] }} {{
+          ansible_facts['distribution_version'] }}
 
     - name: Install update-manager-core
       ansible.builtin.apt:
@@ -49,7 +54,9 @@
 
     - name: Run do-release-upgrade
       ansible.builtin.shell:
-        cmd: DEBIAN_FRONTEND=noninteractive do-release-upgrade -f DistUpgradeViewNonInteractive < /dev/null
+        cmd: >-
+          DEBIAN_FRONTEND=noninteractive do-release-upgrade -f
+          DistUpgradeViewNonInteractive < /dev/null
       args:
         executable: /bin/bash
       register: upgrade_result
@@ -61,20 +68,23 @@
         - "'No new release found' not in upgrade_result.stdout"
         - "'no development version' not in upgrade_result.stdout | lower"
 
-    - name: Reboot after upgrade
+    - name: Reboot after upgrade  # noqa: no-handler
       ansible.builtin.raw: shutdown -r now
+      changed_when: true
       when: upgrade_result.changed
 
-    - name: Wait for host to come back
+    - name: Wait for host to come back  # noqa: no-handler
       ansible.builtin.wait_for_connection:
         delay: 30
         timeout: 300
       when: upgrade_result.changed
 
-    - name: Re-gather facts after upgrade
+    - name: Re-gather facts after upgrade  # noqa: no-handler
       ansible.builtin.setup:
       when: upgrade_result.changed
 
     - name: Report result
       ansible.builtin.debug:
-        msg: "{{ 'Upgraded to ' + ansible_facts['distribution_version'] if upgrade_result.changed else 'Already on latest LTS' }}"
+        msg: >-
+          {{ 'Upgraded to ' + ansible_facts['distribution_version']
+          if upgrade_result.changed else 'Already on latest LTS' }}

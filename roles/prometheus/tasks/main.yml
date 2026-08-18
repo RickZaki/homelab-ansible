@@ -44,6 +44,7 @@
   block:
     - name: Download prometheus release
       ansible.builtin.get_url:
+        # yamllint disable-line rule:line-length
         url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
         dest: /tmp/prometheus.tar.gz
         mode: "0644"

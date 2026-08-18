@@ -17,7 +17,7 @@
 
 - name: Record if stopped
   ansible.builtin.set_fact:
-    was_stopped: true
+    lxc_was_stopped: true
   when:
     - proxmox_vmid is defined
     - lxc_status.rc == 0
@@ -28,19 +28,20 @@
     msg: "LXC {{ proxmox_vmid }} is stopped — skipping (dry run)"
   when:
     - ansible_check_mode
-    - was_stopped | default(false)
+    - lxc_was_stopped | default(false)
 
 - name: Exclude stopped LXC from check mode
   ansible.builtin.meta: end_host
   when:
     - ansible_check_mode
-    - was_stopped | default(false)
+    - lxc_was_stopped | default(false)
 
 - name: Start stopped LXC
   ansible.builtin.command: /usr/sbin/pct start {{ proxmox_vmid }}
   delegate_to: "{{ pve_node | default(inventory_hostname) }}"
   become: true
-  when: was_stopped | default(false)
+  changed_when: true
+  when: lxc_was_stopped | default(false)
 
 - name: Wait for LXC to be running
   ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
@@ -48,11 +49,12 @@
   become: true
   register: lxc_wait
   until: "'running' in lxc_wait.stdout"
+  changed_when: false
   retries: 12
   delay: 5
-  when: was_stopped | default(false)
+  when: lxc_was_stopped | default(false)
 
 - name: Allow services time to initialize
   ansible.builtin.pause:
     seconds: 15
-  when: was_stopped | default(false)
+  when: lxc_was_stopped | default(false)

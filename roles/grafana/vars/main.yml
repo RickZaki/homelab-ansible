@@ -1,5 +1,6 @@
 ---
 # Constructed config content — references vars from group_vars/pve99_containers/
+# yamllint disable rule:line-length
 grafana_oidc_env_content: |
   # Managed by Ansible — do not edit manually
   GF_SERVER_ROOT_URL={{ grafana_root_url }}
@@ -16,6 +17,7 @@ grafana_oidc_env_content: |
   GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH={{ grafana_oidc_role_attribute_path }}
   GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN=true
   GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=false
+# yamllint enable rule:line-length
 
 grafana_oidc_dropin_content: |
   # Managed by Ansible — do not edit manually

@@ -9,7 +9,10 @@
 #   ansible-playbook playbooks/delete_lxc.yml -e target_host=gitlab-runner-82
 
 - name: Stop and destroy LXC container
-  hosts: "{{ target_host | mandatory('Pass -e target_host=<hostname> — this playbook is destructive') }}"
+  hosts: >-
+    {{ target_host | mandatory(
+    'Pass -e target_host=<hostname> —
+    this playbook is destructive') }}
   become: false
   gather_facts: false
 

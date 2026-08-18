@@ -1,8 +1,10 @@
 ---
+# yamllint disable rule:line-length
 # update_community_scipts.yml — Run Proxmox community script 'update' on updateable LXCs.
 #
 # Usage:
 #   ansible-playbook playbooks/update_community_scipts.yml
+# yamllint enable rule:line-length
 
 - name: Run PHS app update on LXCs
   hosts: communityScriptUpdate_capable
@@ -14,7 +16,8 @@
       ansible.builtin.import_tasks: ../roles/lxc/tasks/start_stopped.yml
 
     - name: Update app
-      ansible.builtin.import_tasks: ../roles/lxc/tasks/community_scripts_update.yml
+      ansible.builtin.import_tasks: >-
+        ../roles/lxc/tasks/community_scripts_update.yml
 
     - name: Stop restored LXCs
       ansible.builtin.import_tasks: ../roles/lxc/tasks/stop_restored.yml

@@ -42,7 +42,8 @@
 # Local usage:
 #   echo "my-vault-password" > .vault_pass
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml --tags runner
-#   ansible-playbook playbooks/deploy_gitlab_runner.yml --tags runner --ask-vault-pass
+#   ansible-playbook playbooks/deploy_gitlab_runner.yml \
+#     --tags runner --ask-vault-pass
 
 - name: "Deploy GitLab Runner LXC — Phase 2: GitLab Runner"
   hosts: GitLab_runners

@@ -14,10 +14,12 @@
   ansible.builtin.command: /usr/sbin/pct stop {{ proxmox_vmid }}
   delegate_to: "{{ pve_node }}"
   become: true
+  changed_when: true
   when: "'running' in lxc_status.stdout"
 
 - name: Destroy LXC
   ansible.builtin.command: /usr/sbin/pct destroy {{ proxmox_vmid }} --purge
   delegate_to: "{{ pve_node }}"
   become: true
+  changed_when: true
   when: lxc_status.rc == 0

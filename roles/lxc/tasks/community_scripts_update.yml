@@ -7,3 +7,4 @@
     cmd: PHS_SILENT=1 update < /dev/null
   args:
     executable: /bin/bash
+  changed_when: true

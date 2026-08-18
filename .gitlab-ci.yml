@@ -1,38 +1,18 @@
 ---
 stages:
-  - lint
+  - test
   - validate
   - security
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-
-# ------------------------------------------------------------------ #
-# YAML lint                                                           #
-# ------------------------------------------------------------------ #
-yamllint:
-  stage: lint
-  image: python:3.12-slim
-  tags: [docker, linux]
-  cache:
-    key: pip
-    paths:
-      - .cache/pip
-  before_script:
-    - pip install yamllint
-  script:
-    - yamllint -s .
-  rules:
-    - changes:
-        - "**/*.yml"
-        - "**/*.yaml"
-        - .yamllint
+  ANSIBLE_CONFIG: "$CI_PROJECT_DIR/ansible.cfg"
 
 # ------------------------------------------------------------------ #
 # Ansible lint                                                        #
 # ------------------------------------------------------------------ #
 ansible-lint:
-  stage: lint
+  stage: test
   image: python:3.12-slim
   tags: [docker, linux]
   cache:
@@ -41,6 +21,8 @@ ansible-lint:
       - .cache/pip
   before_script:
     - pip install ansible-lint ansible
+    - printf '#!/bin/sh\necho "$ANSIBLE_VAULT_PASSWORD"' > .vault_pass
+    - chmod +x .vault_pass
   script:
     - ansible-lint
   rules:
@@ -64,6 +46,8 @@ syntax-check:
   before_script:
     - pip install ansible
     - ansible-galaxy collection install community.proxmox
+    - printf '#!/bin/sh\necho "$ANSIBLE_VAULT_PASSWORD"' > .vault_pass
+    - chmod +x .vault_pass
   script:
     - |
       exit_code=0
@@ -71,7 +55,8 @@ syntax-check:
         echo "--- Checking $pb ---"
         # Playbooks with mandatory() need a dummy var to pass syntax check
         if grep -q 'mandatory(' "$pb"; then
-          ansible-playbook "$pb" --syntax-check -e target_host=syntax_check || exit_code=1
+          ansible-playbook "$pb" --syntax-check \
+            -e target_host=syntax_check || exit_code=1
         else
           ansible-playbook "$pb" --syntax-check || exit_code=1
         fi
@@ -101,6 +86,9 @@ checkov:
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
+  - project: 'devops/ci-templates'
+    ref: main
+    file: '/templates/yamllint/template.yml'
 
 sast:
   stage: security

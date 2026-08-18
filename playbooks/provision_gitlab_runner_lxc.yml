@@ -1,4 +1,5 @@
 ---
+# yamllint disable rule:line-length
 # provision_gitlab_runner_lxc.yml — Create one Debian LXC per GitLab Runner host.
 #
 # Targets GitLab_runners and delegates all PVE-side provisioning to pve_node,
@@ -14,6 +15,7 @@
 #
 # Usage:
 #   ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit gitlab-runner-82
+# yamllint enable rule:line-length
 
 - name: Provision GitLab Runner LXC on each PVE node
   hosts: GitLab_runners
@@ -29,7 +31,8 @@
     lxc_bridge: vmbr1
     lxc_vlan: "599"
     lxc_storage: local-zfs
-    lxc_script_url: "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh"
+    lxc_script_url: >-
+      https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh
     lxc_features: "nesting=1"
     lxc_autologin: true
     lxc_extra_mounts:

@@ -1,0 +1,10 @@
+---
+extends: default
+
+rules:
+  line-length:
+    allow-non-breakable-words: true
+
+ignore: |
+  .gitlab-ci-local/
+  vault.yml

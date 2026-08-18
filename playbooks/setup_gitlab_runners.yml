@@ -1,7 +1,8 @@
 ---
 # setup_gitlab_runners.yml — End-to-end GitLab Runner setup.
 #
-# Play 1: Provision the LXC container on the PVE node (creates if not exists, reconciles if exists)
+# Play 1: Provision the LXC container on the PVE node
+#   (creates if not exists, reconciles if exists)
 # Play 2: Ensure the container is running
 # Play 3: Install Docker + GitLab Runner inside the container
 # Play 4: Restore container to stopped state if it was stopped before we started
@@ -10,8 +11,11 @@
 #   ansible-playbook playbooks/setup_gitlab_runners.yml
 #   ansible-playbook playbooks/setup_gitlab_runners.yml --limit gitlab-runner-82
 
-- import_playbook: provision_gitlab_runner_lxc.yml
-- import_playbook: deploy_gitlab_runner.yml
-- import_playbook: configure_docker_tcp.yml
+- name: Provision GitLab Runner LXC
+  import_playbook: provision_gitlab_runner_lxc.yml
+- name: Deploy GitLab Runner
+  import_playbook: deploy_gitlab_runner.yml
+- name: Configure Docker TCP
+  import_playbook: configure_docker_tcp.yml
   vars:
     docker_target_hosts: GitLab_runners
