@@ -1,153 +1,31 @@
 ---
-# deploy_gitlab_runner.yml — Install Docker on GitLab Runner LXCs (one per PVE node).
+# deploy_gitlab_runner.yml — Install Docker + GitLab Runner on LXCs.
 #
-# LXC containers are created via the Proxmox community Debian script:
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh)"
-#
-# Container layout:
-#   VMID   : 1337110{node_id}  (e.g. 13371101 on pve01, 13371182 on pve82)
-#   VLAN   : 599
-#   Mounts : / (root) + /var/lib/docker (8 GB, dedicated data volume)
-#
-# This playbook covers Phase 1: Docker installation only.
-# Phase 2 (GitLab runner registration) will be added as a separate task block below.
+# Phase 1: Docker installation (docker role)
+# Phase 2: GitLab Runner install and registration (gitlab_runner role)
 #
 # Usage:
-#   # All runner nodes
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml
-#
-#   # Single node
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml --limit gitlab-runner-01
-#
-#   # Dry-run
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml --check
+#   ansible-playbook playbooks/deploy_gitlab_runner.yml --tags runner
 
 
 - name: "Deploy GitLab Runner LXC — Phase 1: Docker"
   hosts: GitLab_runners
-  become: true
+  become: false
   gather_facts: true
-
-  vars:
-    docker_arch_map:
-      x86_64: amd64
-      aarch64: arm64
-    docker_arch: "{{ docker_arch_map[ansible_facts['architecture']] | default('amd64') }}"
-    docker_apt_keyring: /etc/apt/keyrings/docker.asc
-    docker_packages:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-buildx-plugin
-      - docker-compose-plugin
 
   pre_tasks:
     - name: Start stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/start_stopped.yml
+
+  roles:
+    - role: docker
 
   post_tasks:
     - name: Restore stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
-
-  tasks:
-    # ------------------------------------------------------------------ #
-    # Prerequisites                                                        #
-    # ------------------------------------------------------------------ #
-
-    - name: Install apt prerequisites for Docker repo
-      ansible.builtin.apt:
-        name:
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: true
-
-    - name: Ensure /etc/apt/keyrings directory exists
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    # ------------------------------------------------------------------ #
-    # Docker apt repository                                                #
-    # ------------------------------------------------------------------ #
-
-    - name: Download Docker's official GPG key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/debian/gpg
-        dest: "{{ docker_apt_keyring }}"
-        owner: root
-        group: root
-        mode: "0644"
-        force: false          # skip re-download if already present
-
-    - name: Add Docker apt repository
-      ansible.builtin.deb822_repository:
-        name: docker
-        types: deb
-        architectures: "{{ docker_arch }}"
-        uris: https://download.docker.com/linux/debian
-        suites: "{{ ansible_facts['distribution_release'] }}"
-        components: stable
-        signed_by: "{{ docker_apt_keyring }}"
-        state: present
-
-    # ------------------------------------------------------------------ #
-    # Docker installation                                                  #
-    # ------------------------------------------------------------------ #
-
-    - name: Install Docker CE and plugins
-      ansible.builtin.apt:
-        name: "{{ docker_packages }}"
-        state: present
-        update_cache: true
-
-    - name: Enable and start Docker service
-      ansible.builtin.systemd:
-        name: docker
-        enabled: true
-        state: started
-
-    - name: Enable and start containerd service
-      ansible.builtin.systemd:
-        name: containerd
-        enabled: true
-        state: started
-
-    # ------------------------------------------------------------------ #
-    # Verify /var/lib/docker mount                                         #
-    # ------------------------------------------------------------------ #
-
-    - name: Confirm /var/lib/docker is a separate mount point
-      ansible.builtin.command: mountpoint -q /var/lib/docker
-      register: docker_mountpoint
-      changed_when: false
-      failed_when: docker_mountpoint.rc != 0
-
-    - name: Report Docker data root
-      ansible.builtin.command: docker info --format '{% raw %}{{.DockerRootDir}}{% endraw %}'
-      register: docker_root
-      changed_when: false
-
-    - name: Show Docker data root
-      ansible.builtin.debug:
-        msg: "Docker data root: {{ docker_root.stdout }}"
-
-    # ------------------------------------------------------------------ #
-    # Smoke test                                                           #
-    # ------------------------------------------------------------------ #
-
-    - name: Pull and run hello-world to verify Docker is functional
-      ansible.builtin.command: docker run --rm hello-world
-      register: hello_world
-      changed_when: false
-
-    - name: Show hello-world output
-      ansible.builtin.debug:
-        msg: "{{ hello_world.stdout_lines }}"
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/stop_restored.yml
 
 
 # ====================================================================== #
@@ -155,165 +33,26 @@
 # ====================================================================== #
 #
 # Vars (set in group_vars/GitLab_runners/vars.yml):
-#   gitlab_url             : https://gitlab.example.com
-#   runner_description     : "{{ inventory_hostname }}"
-#   runner_tags            : [docker, linux]
-#   runner_concurrent      : 4
-#   runner_docker_image    : alpine:latest
-#   runner_docker_volumes  : [/cache]
-#   runner_type            : instance_type  (or group_type / project_type)
+#   gitlab_url, runner_description, runner_tags, runner_concurrent,
+#   runner_docker_image, runner_docker_volumes, runner_type
 #
 # Secret (Ansible Vault — see inventory/group_vars/GitLab_runners/vault.yml):
-#   vault_gitlab_api_token : glpat-xxxx  (needs "api" or "create_runner" scope)
-#
-# NOTE: Uses the new glrt- token workflow (GitLab Runner 17+).
-#   Tags, run_untagged, etc. are set via the API at runner creation time
-#   and must NOT be passed to `gitlab-runner register`.
+#   vault_gitlab_api_token
 #
 # Local usage:
-#   echo "my-vault-password" > .vault_pass   # gitignored; picked up by ansible.cfg
+#   echo "my-vault-password" > .vault_pass
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml --tags runner
-#   # or without .vault_pass:
 #   ansible-playbook playbooks/deploy_gitlab_runner.yml --tags runner --ask-vault-pass
-#
-# Semaphore usage:
-#   Key Store → Add Key → Type: None → paste the vault password
-#   Task Template → Vault Password → select that key
-#   Semaphore decrypts vault.yml at run time; no plain-text secret anywhere
 
 - name: "Deploy GitLab Runner LXC — Phase 2: GitLab Runner"
   hosts: GitLab_runners
-  become: true
+  become: false
   gather_facts: false
   tags: [runner]
 
-  # Explicitly load the runner config so Phase 2 is self-contained.
-  # Automatic group_vars loading can silently fail when proxmox_pct_remote
-  # is in use with gather_facts: false; vars_files bypasses that entirely.
-  # Edit group_vars/GitLab_runners/vars.yml and vault.yml to customise.
   vars_files:
     - ../inventory/group_vars/GitLab_runners/vars.yml
     - ../inventory/group_vars/GitLab_runners/vault.yml
 
-  tasks:
-    # ------------------------------------------------------------------ #
-    # Repository                                                           #
-    # Per docs: https://docs.gitlab.com/runner/install/linux-repository/  #
-    # ------------------------------------------------------------------ #
-
-    - name: Download GitLab Runner repository setup script
-      ansible.builtin.get_url:
-        url: "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh"
-        dest: /tmp/gitlab-runner-repo.sh
-        mode: "0755"
-        force: false
-
-    - name: Add GitLab Runner apt repository
-      ansible.builtin.command: bash /tmp/gitlab-runner-repo.sh
-      args:
-        creates: /etc/apt/sources.list.d/runner_gitlab-runner.list
-
-    # ------------------------------------------------------------------ #
-    # Install                                                              #
-    # ------------------------------------------------------------------ #
-
-    - name: Install gitlab-runner
-      ansible.builtin.apt:
-        name: gitlab-runner
-        state: present
-        update_cache: true
-
-    # ------------------------------------------------------------------ #
-    # Docker group                                                         #
-    # The gitlab-runner user needs access to the Docker socket            #
-    # ------------------------------------------------------------------ #
-
-    - name: Add gitlab-runner user to docker group
-      ansible.builtin.user:
-        name: gitlab-runner
-        groups: docker
-        append: true
-
-    # ------------------------------------------------------------------ #
-    # Register                                                             #
-    # Per docs: https://docs.gitlab.com/runner/register/                  #
-    # Runner token is fetched from the GitLab API — no manual token       #
-    # management required. Requires vault_gitlab_api_token in vault.yml.  #
-    # ------------------------------------------------------------------ #
-
-    - name: Check if runner is already registered locally
-      ansible.builtin.shell: |
-        grep -q 'name = "{{ runner_description }}"' \
-          /etc/gitlab-runner/config.toml 2>/dev/null && echo "yes" || echo "no"
-      register: runner_already_registered
-      changed_when: false
-
-    - name: Create runner via GitLab API and obtain glrt- token
-      ansible.builtin.uri:
-        url: "{{ gitlab_url }}/api/v4/user/runners"
-        method: POST
-        headers:
-          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
-        body_format: json
-        body:
-          runner_type: "{{ runner_type | default('instance_type') }}"
-          description: "{{ runner_description }}"
-          tag_list: "{{ runner_tags | join(',') }}"
-          run_untagged: "{{ runner_untagged | default(true) }}"
-        status_code: 201
-      register: api_runner
-      when: runner_already_registered.stdout == "no"
-      no_log: true   # keep the admin token and the new glrt- token out of logs
-
-    - name: Register runner with GitLab using the API-issued token
-      ansible.builtin.command: >
-        gitlab-runner register
-        --non-interactive
-        --url "{{ gitlab_url }}"
-        --token "{{ api_runner.json.token }}"
-        --executor "docker"
-        --docker-image "{{ runner_docker_image }}"
-        --description "{{ runner_description }}"
-        --docker-volumes "{{ runner_docker_volumes | join(',') }}"
-      when: runner_already_registered.stdout == "no"
-      no_log: true
-
-    # ------------------------------------------------------------------ #
-    # Tune config.toml                                                     #
-    # ------------------------------------------------------------------ #
-
-    - name: Set concurrent job limit
-      ansible.builtin.lineinfile:
-        path: /etc/gitlab-runner/config.toml
-        regexp: '^concurrent\s*='
-        line: "concurrent = {{ runner_concurrent }}"
-      notify: Restart gitlab-runner
-
-    # ------------------------------------------------------------------ #
-    # Service                                                              #
-    # ------------------------------------------------------------------ #
-
-    - name: Enable and start gitlab-runner service
-      ansible.builtin.systemd:
-        name: gitlab-runner
-        enabled: true
-        state: started
-
-    # ------------------------------------------------------------------ #
-    # Verify                                                               #
-    # ------------------------------------------------------------------ #
-
-    - name: Show registered runners
-      ansible.builtin.command: gitlab-runner list
-      register: runner_list
-      changed_when: false
-
-    - name: Runner list output
-      ansible.builtin.debug:
-        msg: "{{ runner_list.stderr_lines }}"   # gitlab-runner list writes to stderr
-
-  handlers:
-    - name: Restart gitlab-runner
-      ansible.builtin.systemd:
-        name: gitlab-runner
-        state: restarted
+  roles:
+    - role: gitlab_runner

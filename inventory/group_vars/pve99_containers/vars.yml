@@ -1,0 +1,17 @@
+---
+# Authentik OIDC settings for Grafana
+authentik_base_url: https://auth.rickzaki.com
+authentik_app_slug: grafana
+
+grafana_oidc_name: authentik
+grafana_oidc_scopes: openid email profile entitlements
+grafana_oidc_client_id: "{{ vault_grafana_oidc_client_id }}"
+grafana_oidc_client_secret: "{{ vault_grafana_oidc_client_secret }}"
+grafana_oidc_auth_url: "{{ authentik_base_url }}/application/o/authorize/"
+grafana_oidc_token_url: "{{ authentik_base_url }}/application/o/token/"
+grafana_oidc_api_url: "{{ authentik_base_url }}/application/o/userinfo/"
+grafana_oidc_signout_url: "{{ authentik_base_url }}/application/o/{{ authentik_app_slug }}/end-session/"
+grafana_oidc_role_attribute_path: "contains(entitlements[*], 'Grafana Admins') && 'GrafanaAdmin' || contains(entitlements[*], 'Grafana Editors') && 'Editor' || 'Viewer'"
+grafana_oidc_auto_login: true
+
+grafana_root_url: https://grafana.home.rickzaki.com

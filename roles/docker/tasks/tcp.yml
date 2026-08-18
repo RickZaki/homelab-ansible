@@ -1,0 +1,49 @@
+---
+# roles/docker/tasks/tcp.yml
+# Enable Docker TCP socket via daemon.json + systemd override.
+#
+# WARNING: TCP without TLS exposes the Docker API on the network.
+
+- name: Configure Docker daemon hosts in daemon.json
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "hosts": [
+          "tcp://{{ docker_tcp_host }}:{{ docker_tcp_port }}",
+          "unix:///var/run/docker.sock"
+        ]
+      }
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd and restart Docker
+
+- name: Ensure Docker systemd override directory exists
+  ansible.builtin.file:
+    path: "{{ docker_override_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Drop systemd override to remove -H flag from ExecStart
+  ansible.builtin.copy:
+    dest: "{{ docker_override_dir }}/override.conf"
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd and restart Docker
+
+- name: Confirm Docker is listening on TCP
+  ansible.builtin.command: ss -tlnp "sport = :{{ docker_tcp_port }}"
+  register: docker_tcp_check
+  changed_when: false
+
+- name: Show TCP socket status
+  ansible.builtin.debug:
+    msg: "{{ docker_tcp_check.stdout_lines }}"

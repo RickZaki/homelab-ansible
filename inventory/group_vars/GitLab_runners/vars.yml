@@ -18,19 +18,22 @@ gitlab_api_token: "{{ vault_gitlab_api_token }}"
 runner_description: "{{ inventory_hostname }}"
 
 runner_tags:
+  - debian
   - docker
   - linux
+  - lxc
 
-runner_concurrent: 4
+runner_concurrent: 2
 
 runner_type: instance_type   # or group_type / project_type
 
 runner_untagged: true
 
 # ------------------------------------------------------------------ #
-# Docker executor defaults                                             #
+# Docker executor defaults                                           #
+# No DinD — use Kaniko for Docker image builds                       #
 # ------------------------------------------------------------------ #
-runner_docker_image: "alpine:latest"
+runner_docker_image: "alpine"
 
 runner_docker_volumes:
   - /cache

@@ -16,14 +16,14 @@
 
   pre_tasks:
     - name: Start stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/start_stopped.yml
 
     - name: Gather facts
       ansible.builtin.setup:
 
   post_tasks:
     - name: Restore stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/stop_restored.yml
 
   tasks:
     - name: Show current release

@@ -1,0 +1,23 @@
+---
+# Constructed config content — references vars from group_vars/pve99_containers/
+grafana_oidc_env_content: |
+  # Managed by Ansible — do not edit manually
+  GF_SERVER_ROOT_URL={{ grafana_root_url }}
+  GF_AUTH_SIGNOUT_REDIRECT_URL={{ grafana_oidc_signout_url }}
+  GF_AUTH_OAUTH_AUTO_LOGIN={{ grafana_oidc_auto_login }}
+  GF_AUTH_GENERIC_OAUTH_ENABLED=true
+  GF_AUTH_GENERIC_OAUTH_NAME={{ grafana_oidc_name }}
+  GF_AUTH_GENERIC_OAUTH_CLIENT_ID={{ grafana_oidc_client_id }}
+  GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET={{ grafana_oidc_client_secret }}
+  GF_AUTH_GENERIC_OAUTH_SCOPES={{ grafana_oidc_scopes }}
+  GF_AUTH_GENERIC_OAUTH_AUTH_URL={{ grafana_oidc_auth_url }}
+  GF_AUTH_GENERIC_OAUTH_TOKEN_URL={{ grafana_oidc_token_url }}
+  GF_AUTH_GENERIC_OAUTH_API_URL={{ grafana_oidc_api_url }}
+  GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH={{ grafana_oidc_role_attribute_path }}
+  GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN=true
+  GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT=false
+
+grafana_oidc_dropin_content: |
+  # Managed by Ansible — do not edit manually
+  [Service]
+  EnvironmentFile=/etc/grafana/oidc.env

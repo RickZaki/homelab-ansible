@@ -1,10 +1,16 @@
 ---
+# roles/lxc/tasks/start_stopped.yml
+# Start stopped LXCs and record original state for later restoration.
+# Use in pre_tasks with include_tasks.
+
 - name: Check LXC status
   ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
   delegate_to: "{{ pve_node | default(inventory_hostname) }}"
+  become: true
   register: lxc_status
   changed_when: false
   failed_when: false
+  check_mode: false
   when:
     - proxmox_vmid is defined
     - pve_node is defined
@@ -17,14 +23,29 @@
     - lxc_status.rc == 0
     - "'stopped' in lxc_status.stdout"
 
+- name: Skip stopped LXC in check mode
+  ansible.builtin.debug:
+    msg: "LXC {{ proxmox_vmid }} is stopped — skipping (dry run)"
+  when:
+    - ansible_check_mode
+    - was_stopped | default(false)
+
+- name: Exclude stopped LXC from check mode
+  ansible.builtin.meta: end_host
+  when:
+    - ansible_check_mode
+    - was_stopped | default(false)
+
 - name: Start stopped LXC
   ansible.builtin.command: /usr/sbin/pct start {{ proxmox_vmid }}
   delegate_to: "{{ pve_node | default(inventory_hostname) }}"
+  become: true
   when: was_stopped | default(false)
 
 - name: Wait for LXC to be running
   ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
   delegate_to: "{{ pve_node | default(inventory_hostname) }}"
+  become: true
   register: lxc_wait
   until: "'running' in lxc_wait.stdout"
   retries: 12

@@ -1,0 +1,67 @@
+---
+# roles/grafana/tasks/main.yml
+# Install Grafana OSS and configure OIDC authentication via Authentik.
+
+# ------------------------------------------------------------------ #
+# Install                                                              #
+# ------------------------------------------------------------------ #
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - gnupg
+      - curl
+    state: present
+    update_cache: true
+
+- name: Add Grafana GPG key
+  ansible.builtin.shell: >
+    curl -fsSL https://apt.grafana.com/gpg.key |
+    gpg --dearmor -o /usr/share/keyrings/grafana.gpg
+  args:
+    creates: /usr/share/keyrings/grafana.gpg
+
+- name: Add Grafana apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/grafana.list
+    content: "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main\n"
+    mode: "0644"
+
+- name: Install grafana
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: true
+
+- name: Enable and start grafana-server
+  ansible.builtin.systemd:
+    name: grafana-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ------------------------------------------------------------------ #
+# OIDC configuration via env file + systemd drop-in                    #
+# ------------------------------------------------------------------ #
+
+- name: Write OIDC env file
+  ansible.builtin.copy:
+    dest: /etc/grafana/oidc.env
+    content: "{{ grafana_oidc_env_content }}"
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart grafana
+
+- name: Create systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/grafana-server.service.d
+    state: directory
+    mode: "0755"
+
+- name: Write systemd drop-in for OIDC env
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/grafana-server.service.d/oidc.conf
+    content: "{{ grafana_oidc_dropin_content }}"
+    mode: "0644"
+  notify: Restart grafana

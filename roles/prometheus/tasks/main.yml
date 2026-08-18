@@ -1,0 +1,126 @@
+---
+# roles/prometheus/tasks/main.yml
+# Install Prometheus from official binary release.
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - tar
+    state: present
+    update_cache: true
+
+- name: Create prometheus group
+  ansible.builtin.group:
+    name: "{{ prometheus_group }}"
+    system: true
+
+- name: Create prometheus user
+  ansible.builtin.user:
+    name: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: "0755"
+  loop:
+    - "{{ prometheus_config_dir }}"
+    - "{{ prometheus_data_dir }}"
+
+- name: Check if prometheus is already installed
+  ansible.builtin.stat:
+    path: "{{ prometheus_install_dir }}/prometheus"
+  register: prometheus_bin
+
+- name: Download and install prometheus
+  when: not prometheus_bin.stat.exists
+  block:
+    - name: Download prometheus release
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+        mode: "0644"
+
+    - name: Extract prometheus archive
+      ansible.builtin.unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /tmp
+        remote_src: true
+
+    - name: Install prometheus binaries
+      ansible.builtin.copy:
+        src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+        dest: "{{ prometheus_install_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: true
+      loop:
+        - prometheus
+        - promtool
+
+    - name: Clean up download
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/prometheus.tar.gz
+        - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+
+- name: Install default prometheus config
+  ansible.builtin.copy:
+    dest: "{{ prometheus_config_dir }}/prometheus.yml"
+    owner: "{{ prometheus_user }}"
+    group: "{{ prometheus_group }}"
+    mode: "0644"
+    force: false
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: "prometheus"
+          static_configs:
+            - targets: ["localhost:9090"]
+  notify: Restart prometheus
+
+- name: Install prometheus systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus Monitoring
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      User={{ prometheus_user }}
+      Group={{ prometheus_group }}
+      Type=simple
+      ExecStart={{ prometheus_install_dir }}/prometheus \
+        --config.file={{ prometheus_config_dir }}/prometheus.yml \
+        --storage.tsdb.path={{ prometheus_data_dir }} \
+        --web.listen-address={{ prometheus_listen_address }}
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart prometheus
+
+- name: Enable and start prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    enabled: true
+    state: started
+    daemon_reload: true

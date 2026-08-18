@@ -2,7 +2,7 @@
 # provision_lxc.yml — Generic LXC provisioner.
 #
 # Provisions any LXC container from any community-scripts URL.
-# All optional vars default in tasks/provision_lxc.yml; the community
+# All optional vars default in the lxc role; the community
 # script's own defaults apply for anything not explicitly set.
 #
 # Required:
@@ -17,10 +17,9 @@
 #     [--limit pve01]
 
 - name: Provision LXC container
-  hosts: ProxmoxVirtualEnvironments
+  hosts: lxc_powered
   become: true
   gather_facts: false
 
-  tasks:
-    - name: Provision LXC {{ lxc_vmid }} ({{ lxc_hostname }})
-      ansible.builtin.import_tasks: ../tasks/provision_lxc.yml
+  roles:
+    - role: lxc

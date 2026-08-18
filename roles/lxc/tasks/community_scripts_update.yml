@@ -1,4 +1,7 @@
 ---
+# roles/lxc/tasks/community_scripts_update.yml
+# Run Proxmox community script 'update' command.
+
 - name: Update app
   ansible.builtin.shell:
     cmd: PHS_SILENT=1 update < /dev/null

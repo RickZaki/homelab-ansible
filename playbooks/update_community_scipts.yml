@@ -1,9 +1,8 @@
 ---
-# lxc_app_update.yml — Run Proxmox Helper Scripts 'update' on updateable LXCs.
+# update_community_scipts.yml — Run Proxmox community script 'update' on updateable LXCs.
 #
 # Usage:
-#   ansible-playbook playbooks/lxc_app_update.yml
-#
+#   ansible-playbook playbooks/update_community_scipts.yml
 
 - name: Run PHS app update on LXCs
   hosts: communityScriptUpdate_capable
@@ -12,10 +11,10 @@
 
   tasks:
     - name: Start stopped LXCs
-      ansible.builtin.import_tasks: ../tasks/lxc_start_stopped.yml
+      ansible.builtin.import_tasks: ../roles/lxc/tasks/start_stopped.yml
 
     - name: Update app
-      ansible.builtin.import_tasks: ../tasks/community_scripts_update.yml
+      ansible.builtin.import_tasks: ../roles/lxc/tasks/community_scripts_update.yml
 
     - name: Stop restored LXCs
-      ansible.builtin.import_tasks: ../tasks/lxc_stop_restored.yml
+      ansible.builtin.import_tasks: ../roles/lxc/tasks/stop_restored.yml

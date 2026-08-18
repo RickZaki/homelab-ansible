@@ -1,10 +1,13 @@
 ---
+# lxc_stop_restored.yml — Restore LXCs to stopped state.
+#
+# Usage:
+#   ansible-playbook playbooks/lxc_stop_restored.yml
+
 - name: Shut down LXCs that were started for updates
   hosts: "{{ lxc_target_hosts | default('all') }}"
   become: true
   gather_facts: false
   tasks:
-    - name: Shutdown LXC
-      ansible.builtin.command: /usr/sbin/pct shutdown {{ proxmox_vmid }} --timeout 60
-      delegate_to: "{{ pve_node | default(inventory_hostname) }}"
-      when: was_stopped | default(false)
+    - name: Restore stopped LXCs
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/stop_restored.yml

@@ -1,0 +1,64 @@
+---
+# register_gitlab_deploy_key.yml — Register an SSH deploy key on a GitLab repo.
+#
+# Reads the host's public key and adds it as a read-only deploy key via the
+# GitLab API. Idempotent — skips if the key is already registered.
+#
+# Requires:
+#   - SSH key already generated on the host (run install_git.yml first)
+#   - vault_gitlab_api_token with api scope
+#
+# Usage:
+#   ansible-playbook playbooks/register_gitlab_deploy_key.yml --limit prometheus
+#   ansible-playbook playbooks/register_gitlab_deploy_key.yml --limit prometheus \
+#     -e gitlab_project_path=homelab/other/repo
+
+- name: Register SSH deploy key on GitLab
+  hosts: pve99_containers
+  become: false
+  gather_facts: false
+
+  vars:
+    git_ssh_key_path: /root/.ssh/id_ed25519
+    gitlab_host: gitlab.home.rickzaki.com
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_project_path: homelab/services/ops/prometheus-config
+    gitlab_api_token: "{{ vault_gitlab_api_token }}"
+
+  vars_files:
+    - ../inventory/group_vars/GitLab_runners/vault.yml
+
+  tasks:
+    - name: Read public key
+      ansible.builtin.command: cat {{ git_ssh_key_path }}.pub
+      register: deploy_key
+      changed_when: false
+
+    - name: Check if deploy key already exists on GitLab
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        status_code: 200
+      register: existing_keys
+      no_log: true
+
+    - name: Add deploy key to GitLab repo
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        body_format: json
+        body:
+          title: "{{ inventory_hostname }} (ansible-deploy)"
+          key: "{{ deploy_key.stdout }}"
+          can_push: false
+        status_code: 201
+      when: deploy_key.stdout not in (existing_keys.json | map(attribute='key') | list)
+      no_log: true
+
+    - name: Deploy key status
+      ansible.builtin.debug:
+        msg: "{{ 'Deploy key already registered' if deploy_key.stdout in (existing_keys.json | map(attribute='key') | list) else 'Deploy key added to ' + gitlab_project_path }}"

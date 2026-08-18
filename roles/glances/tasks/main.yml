@@ -1,0 +1,48 @@
+---
+# roles/glances/tasks/main.yml
+# Install Glances monitoring with web UI into a virtualenv.
+#
+# Uses vars from group_vars/all/vars.yml:
+#   glances_venv, glances_bind, glances_port, glances_version, glances_extras
+
+- name: Install python3-venv
+  ansible.builtin.apt:
+    name: python3-venv
+    state: present
+    update_cache: true
+
+- name: Install glances into virtualenv
+  ansible.builtin.pip:
+    name: "glances[{{ glances_extras }}]"
+    version: "{{ omit if glances_version == 'latest' else glances_version }}"
+    virtualenv: "{{ glances_venv }}"
+    virtualenv_command: python3 -m venv
+  notify: Restart glances
+
+- name: Install glances systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/glances.service
+    content: |
+      [Unit]
+      Description=Glances Web Server
+      After=network.target
+
+      [Service]
+      ExecStart={{ glances_venv }}/bin/glances -w -B {{ glances_bind }} -p {{ glances_port }}
+      Restart=always
+      User=root
+      Environment="PATH={{ glances_venv }}/bin:/usr/bin:/usr/local/bin"
+
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart glances
+
+- name: Enable and start glances
+  ansible.builtin.systemd:
+    name: glances
+    enabled: true
+    state: started
+    daemon_reload: true

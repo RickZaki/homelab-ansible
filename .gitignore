@@ -2,3 +2,4 @@
 .envrc
 .vault_pass
 validation-checklist.md
+inventory/tf_containers.yml

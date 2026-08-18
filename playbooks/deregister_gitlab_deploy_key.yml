@@ -1,0 +1,64 @@
+---
+# deregister_gitlab_deploy_key.yml — Remove an SSH deploy key from a GitLab repo.
+#
+# Reads the host's public key and removes the matching deploy key via the
+# GitLab API. Idempotent — skips if no matching key is found.
+#
+# Usage:
+#   ansible-playbook playbooks/deregister_gitlab_deploy_key.yml --limit prometheus
+#   ansible-playbook playbooks/deregister_gitlab_deploy_key.yml --limit prometheus \
+#     -e gitlab_project_path=homelab/other/repo
+
+- name: Remove SSH deploy key from GitLab
+  hosts: pve99_containers
+  become: false
+  gather_facts: false
+
+  vars:
+    git_ssh_key_path: /root/.ssh/id_ed25519
+    gitlab_host: gitlab.home.rickzaki.com
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_project_path: homelab/services/ops/prometheus-config
+    gitlab_api_token: "{{ vault_gitlab_api_token }}"
+
+  vars_files:
+    - ../inventory/group_vars/GitLab_runners/vault.yml
+
+  tasks:
+    - name: Read public key
+      ansible.builtin.command: cat {{ git_ssh_key_path }}.pub
+      register: deploy_key
+      changed_when: false
+      failed_when: false
+
+    - name: List deploy keys on GitLab repo
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        status_code: 200
+      register: existing_keys
+      when: deploy_key.rc == 0
+      no_log: true
+
+    - name: Find matching deploy key ID
+      ansible.builtin.set_fact:
+        deploy_key_id: "{{ (existing_keys.json | selectattr('key', 'equalto', deploy_key.stdout) | first).id }}"
+      when:
+        - deploy_key.rc == 0
+        - deploy_key.stdout in (existing_keys.json | map(attribute='key') | list)
+
+    - name: Remove deploy key from GitLab repo
+      ansible.builtin.uri:
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys/{{ deploy_key_id }}"
+        method: DELETE
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        status_code: [204, 404]
+      when: deploy_key_id is defined
+      no_log: true
+
+    - name: Deploy key status
+      ansible.builtin.debug:
+        msg: "{{ 'Deploy key removed from ' + gitlab_project_path if deploy_key_id is defined else 'No matching deploy key found' }}"

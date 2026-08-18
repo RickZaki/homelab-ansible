@@ -1,0 +1,57 @@
+---
+# install_git.yml — Install git and generate an SSH deploy key.
+#
+# Generates an ed25519 key pair for root and prints the public key.
+# Use register_gitlab_deploy_key.yml to push it to GitLab automatically,
+# or add it manually under repo Settings → Repository → Deploy Keys.
+#
+# Usage:
+#   ansible-playbook playbooks/install_git.yml --limit prometheus
+
+- name: Install git and generate SSH deploy key
+  hosts: pve99_containers
+  become: false
+  gather_facts: false
+
+  vars:
+    git_ssh_key_path: /root/.ssh/id_ed25519
+    gitlab_host: gitlab.home.rickzaki.com
+
+  tasks:
+    - name: Install git
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: true
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Generate ed25519 SSH key pair
+      ansible.builtin.command: >
+        ssh-keygen -t ed25519 -f {{ git_ssh_key_path }}
+        -N "" -C "{{ inventory_hostname }}@ansible-deploy"
+      args:
+        creates: "{{ git_ssh_key_path }}"
+
+    - name: Add GitLab host key to known_hosts
+      ansible.builtin.shell: >
+        ssh-keyscan -H {{ gitlab_host }} >> /root/.ssh/known_hosts 2>/dev/null
+      args:
+        creates: /root/.ssh/known_hosts
+
+    - name: Read public key
+      ansible.builtin.command: cat {{ git_ssh_key_path }}.pub
+      register: deploy_key
+      changed_when: false
+
+    - name: Show deploy key
+      ansible.builtin.debug:
+        msg:
+          - "Public key for {{ inventory_hostname }}:"
+          - "{{ deploy_key.stdout }}"

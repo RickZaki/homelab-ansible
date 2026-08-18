@@ -1,0 +1,166 @@
+---
+# roles/gitlab_runner/tasks/main.yml
+# Install and register a GitLab Runner using the glrt- token workflow (GitLab 17+).
+#
+# Required vars (typically from group_vars/GitLab_runners/):
+#   gitlab_url, gitlab_api_token, runner_description, runner_tags,
+#   runner_concurrent, runner_docker_image, runner_docker_volumes
+
+# ------------------------------------------------------------------ #
+# Repository                                                           #
+# ------------------------------------------------------------------ #
+
+- name: Download GitLab Runner repository setup script
+  ansible.builtin.get_url:
+    url: "https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh"
+    dest: /tmp/gitlab-runner-repo.sh
+    mode: "0755"
+    force: false
+
+- name: Add GitLab Runner apt repository
+  ansible.builtin.command: bash /tmp/gitlab-runner-repo.sh
+  args:
+    creates: /etc/apt/sources.list.d/runner_gitlab-runner.list
+
+# ------------------------------------------------------------------ #
+# Install                                                              #
+# ------------------------------------------------------------------ #
+
+- name: Install gitlab-runner
+  ansible.builtin.apt:
+    name: gitlab-runner
+    state: present
+    update_cache: true
+
+# ------------------------------------------------------------------ #
+# Docker group                                                         #
+# ------------------------------------------------------------------ #
+
+- name: Add gitlab-runner user to docker group
+  ansible.builtin.user:
+    name: gitlab-runner
+    groups: docker
+    append: true
+
+# ------------------------------------------------------------------ #
+# Register                                                             #
+# ------------------------------------------------------------------ #
+
+- name: Check if runner is already registered locally
+  ansible.builtin.shell: |
+    grep -q 'name = "{{ runner_description }}"' \
+      /etc/gitlab-runner/config.toml 2>/dev/null && echo "yes" || echo "no"
+  register: runner_already_registered
+  changed_when: false
+
+- name: Create runner via GitLab API and obtain glrt- token
+  ansible.builtin.uri:
+    url: "{{ gitlab_url }}/api/v4/user/runners"
+    method: POST
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+    body_format: json
+    body:
+      runner_type: "{{ runner_type | default('instance_type') }}"
+      description: "{{ runner_description }}"
+      tag_list: "{{ runner_tags | join(',') }}"
+      run_untagged: "{{ runner_untagged | default(true) }}"
+    status_code: 201
+  register: api_runner
+  when: runner_already_registered.stdout == "no"
+  no_log: true
+
+- name: Register runner with GitLab using the API-issued token
+  ansible.builtin.command: >
+    gitlab-runner register
+    --non-interactive
+    --url "{{ gitlab_url }}"
+    --token "{{ api_runner.json.token }}"
+    --executor "docker"
+    --docker-image "{{ runner_docker_image }}"
+    --description "{{ runner_description }}"
+    --docker-volumes "{{ runner_docker_volumes | join(',') }}"
+  when: runner_already_registered.stdout == "no"
+  no_log: true
+
+# ------------------------------------------------------------------ #
+# Tune config.toml                                                     #
+# ------------------------------------------------------------------ #
+
+- name: Set concurrent job limit
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^concurrent\s*='
+    line: "concurrent = {{ runner_concurrent }}"
+  notify: Restart gitlab-runner
+
+- name: Set default Docker image
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*image\s*='
+    insertafter: '^\s*\[runners\.docker\]'
+    line: '    image = "{{ runner_docker_image }}"'
+  notify: Restart gitlab-runner
+
+- name: Enable privileged mode for Docker-in-Docker
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*privileged\s*='
+    insertafter: '^\s*\[runners\.docker\]'
+    line: "    privileged = true"
+  notify: Restart gitlab-runner
+
+- name: Add environment array for DOCKER_TLS_CERTDIR
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*environment\s*='
+    insertafter: '^\s*privileged\s*=\s*true'
+    line: '    environment = ["DOCKER_TLS_CERTDIR="]'
+  notify: Restart gitlab-runner
+
+- name: Set Docker pull policy to if-not-present
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*pull_policy\s*='
+    insertafter: '^\s*\[runners\.docker\]'
+    line: '    pull_policy = ["if-not-present"]'
+  notify: Restart gitlab-runner
+
+- name: Remove containers after job completion
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*remove\s*='
+    insertafter: '^\s*\[runners\.docker\]'
+    line: '    remove = true'
+  notify: Restart gitlab-runner
+
+- name: Set Docker network mode to bridge
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab-runner/config.toml
+    regexp: '^\s*network_mode\s*='
+    insertafter: '^\s*\[runners\.docker\]'
+    line: '    network_mode = "bridge"'
+  notify: Restart gitlab-runner
+
+# ------------------------------------------------------------------ #
+# Service                                                              #
+# ------------------------------------------------------------------ #
+
+- name: Enable and start gitlab-runner service
+  ansible.builtin.systemd:
+    name: gitlab-runner
+    enabled: true
+    state: started
+
+# ------------------------------------------------------------------ #
+# Verify                                                               #
+# ------------------------------------------------------------------ #
+
+- name: Show registered runners
+  ansible.builtin.command: gitlab-runner list
+  register: runner_list
+  changed_when: false
+
+- name: Runner list output
+  ansible.builtin.debug:
+    msg: "{{ runner_list.stderr_lines }}"

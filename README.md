@@ -1,6 +1,6 @@
 # Proxmox Ansible Automation
 
-Ansible playbooks for managing a Proxmox VE cluster — LXC container provisioning, GitLab Runner deployment, system updates, and monitoring.
+Ansible playbooks and roles for managing a Proxmox VE cluster — LXC container provisioning, GitLab Runner deployment, system updates, and monitoring.
 
 ## Prerequisites
 
@@ -32,21 +32,39 @@ ansible-playbook playbooks/apt_upgrade.yml
 
 ```
 .
-├── ansible.cfg                  # Ansible config (inventory, SSH key, vault)
+├── ansible.cfg                  # Ansible config (inventory, SSH key, vault, roles_path)
 ├── inventory/
 │   ├── hosts.yml                # Host inventory and group definitions
 │   └── group_vars/
 │       ├── all/vars.yml         # Global variables (glances, SSH pubkey)
-│       └── GitLab_runners/
-│           ├── vars.yml         # Runner config (URL, tags, concurrency)
-│           └── vault.yml        # Encrypted GitLab API token
-├── playbooks/                   # Runnable playbooks
-├── tasks/                       # Reusable task files (included by playbooks)
-├── handlers/                    # Service restart handlers
-├── files/                       # Static files deployed to hosts
+│       ├── GitLab_runners/
+│       │   ├── vars.yml         # Runner config (URL, tags, concurrency)
+│       │   └── vault.yml        # Encrypted GitLab API token
+│       └── pve99_containers/
+│           ├── vars.yml         # Grafana OIDC, Authentik config
+│           └── vault.yml        # Encrypted OIDC secrets
+├── playbooks/                   # Thin orchestrators that compose roles
+├── roles/
+│   ├── lxc/                     # LXC provisioning, lifecycle, community scripts
+│   ├── docker/                  # Docker CE install + TCP socket config
+│   ├── gitlab_runner/           # GitLab Runner install + registration
+│   ├── glances/                 # Glances monitoring install
+│   ├── grafana/                 # Grafana install + OIDC via Authentik
+│   └── prometheus/              # Prometheus config via git repo
 ├── validate.sh                  # Syntax check + validation runner
 └── validation-checklist.md      # Manual test tracking (gitignored)
 ```
+
+## Roles
+
+| Role | Purpose | Key tasks |
+|------|---------|-----------|
+| `lxc` | LXC container lifecycle | `main.yml` (provision/reconcile), `delete.yml`, `start_stopped.yml`, `stop_restored.yml`, `community_scripts_update.yml` |
+| `docker` | Docker CE installation | `main.yml` (install), `tcp.yml` (TCP socket config) |
+| `gitlab_runner` | GitLab Runner | Install, register via API (glrt- token workflow) |
+| `glances` | Glances monitoring | Install into virtualenv with systemd service |
+| `grafana` | Grafana configuration | Install + OIDC/Authentik via systemd drop-in + env file |
+| `prometheus` | Prometheus configuration | Deploy key, git clone config repo, restart service |
 
 ## Inventory
 
@@ -57,6 +75,7 @@ ansible-playbook playbooks/apt_upgrade.yml
 | `ProxmoxVirtualEnvironments` | pve01, pve02, pve82, pve99 | SSH |
 | `ProxmoxBackupServers` | ProxmoxBackupServer | SSH |
 | `pve01_containers` | netRicks, netRicks-tools | `proxmox_pct_remote` |
+| `pve99_containers` | grafana, prometheus | `proxmox_pct_remote` |
 | `GitLab_runners` | gitlab-runner-01, -02, -82, -99 | `proxmox_pct_remote` |
 
 ### Capability Groups
@@ -80,7 +99,7 @@ Playbooks target these groups to scope operations:
 |----------|-------------|-------|
 | `apt_upgrade.yml` | APT update, dist-upgrade, autoremove, conditional reboot | `ansible-playbook playbooks/apt_upgrade.yml` |
 | `do_release_upgrade.yml` | Ubuntu LTS release upgrade (one hop at a time) | `ansible-playbook playbooks/do_release_upgrade.yml` |
-| `install_glances.yml` | Install Glances monitoring with web UI | `ansible-playbook playbooks/install_glances.yml` |
+| `install_glances.yml` | Install Glances monitoring (glances role) | `ansible-playbook playbooks/install_glances.yml` |
 | `bootstrap_ansible.yml` | Create `ansible` service account (run once per host) | `ansible-playbook playbooks/bootstrap_ansible.yml --ask-pass` |
 
 ### GitLab Runners
@@ -88,24 +107,26 @@ Playbooks target these groups to scope operations:
 | Playbook | Description | Usage |
 |----------|-------------|-------|
 | `setup_gitlab_runners.yml` | Full pipeline: provision LXC → Docker → Runner → TCP | `ansible-playbook playbooks/setup_gitlab_runners.yml --limit gitlab-runner-82` |
-| `provision_gitlab_runner_lxc.yml` | Create Debian LXC for a runner | `ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit gitlab-runner-82` |
-| `deploy_gitlab_runner.yml` | Install Docker + register GitLab Runner | `ansible-playbook playbooks/deploy_gitlab_runner.yml` |
-| `configure_docker_tcp.yml` | Enable Docker TCP socket | `ansible-playbook playbooks/configure_docker_tcp.yml` |
+| `provision_gitlab_runner_lxc.yml` | Create Debian LXC for a runner (lxc role) | `ansible-playbook playbooks/provision_gitlab_runner_lxc.yml --limit gitlab-runner-82` |
+| `deploy_gitlab_runner.yml` | Install Docker + register runner (docker + gitlab_runner roles) | `ansible-playbook playbooks/deploy_gitlab_runner.yml` |
+| `configure_docker_tcp.yml` | Enable Docker TCP socket (docker role) | `ansible-playbook playbooks/configure_docker_tcp.yml` |
 
 ### LXC Lifecycle
 
 | Playbook | Description | Usage |
 |----------|-------------|-------|
-| `provision_lxc.yml` | Generic LXC provisioner (community scripts) | `ansible-playbook playbooks/provision_lxc.yml -e lxc_vmid=110 -e lxc_hostname=mycontainer --limit pve01` |
+| `provision_lxc.yml` | Generic LXC provisioner (lxc role) | `ansible-playbook playbooks/provision_lxc.yml -e lxc_vmid=110 -e lxc_hostname=mycontainer --limit pve01` |
 | `lxc_start_stopped.yml` | Start stopped LXCs | `ansible-playbook playbooks/lxc_start_stopped.yml` |
 | `lxc_stop_restored.yml` | Restore LXCs to stopped state | `ansible-playbook playbooks/lxc_stop_restored.yml` |
 | `delete_lxc.yml` | **Destructive** — destroy an LXC container | `ansible-playbook playbooks/delete_lxc.yml -e target_host=gitlab-runner-82` |
-| `delete_gitlab_runner.yml` | **Destructive** — unregister runner from GitLab and destroy LXC | `ansible-playbook playbooks/delete_gitlab_runner.yml -e target_host=gitlab-runner-82` |
+| `delete_gitlab_runner.yml` | **Destructive** — unregister runner + destroy LXC | `ansible-playbook playbooks/delete_gitlab_runner.yml -e target_host=gitlab-runner-82` |
 
-### Application Updates
+### Application Configuration
 
 | Playbook | Description | Usage |
 |----------|-------------|-------|
+| `configure_grafana.yml` | Grafana install + OIDC via Authentik (grafana role) | `ansible-playbook playbooks/configure_grafana.yml` |
+| `configure_prometheus.yml` | Prometheus config via git + deploy key | `ansible-playbook playbooks/configure_prometheus.yml` |
 | `update_community_scipts.yml` | Run Proxmox community script updates | `ansible-playbook playbooks/update_community_scipts.yml` |
 
 ### Common Options
@@ -124,25 +145,17 @@ ansible-playbook playbooks/apt_upgrade.yml --skip-tags reboot
 ansible-playbook playbooks/apt_upgrade.yml --check
 ```
 
-## Shared Tasks
-
-Reusable task files included by multiple playbooks via `include_tasks`:
-
-| Task | Purpose | Used by |
-|------|---------|---------|
-| `tasks/lxc_start_stopped.yml` | Start stopped LXCs, record original state | `apt_upgrade`, `deploy_gitlab_runner`, `do_release_upgrade` |
-| `tasks/lxc_stop_restored.yml` | Restore LXCs to original stopped state | Same as above (post-task) |
-| `tasks/provision_lxc.yml` | Create or reconcile LXC containers | `provision_lxc`, `provision_gitlab_runner_lxc` |
-| `tasks/community_scripts_update.yml` | Run community script update command | `update_community_scipts` |
-
 ## Lessons Learned
 
 See [LESSONS_LEARNED.md](LESSONS_LEARNED.md) for gotchas and insights from building and validating these playbooks against a production Proxmox cluster.
 
 ## Design Patterns
 
+### Role-Based Organization
+Reusable logic lives in `roles/` with standard Ansible structure (tasks, handlers, defaults, files, vars). Playbooks are thin orchestrators that compose roles and set host/var context.
+
 ### LXC Start/Stop Lifecycle
-Playbooks that target LXC containers use pre/post tasks to ensure containers are running during execution and restored to their original state afterward. The `was_stopped` fact tracks the original state.
+Playbooks that target LXC containers use pre/post tasks to ensure containers are running during execution and restored to their original state afterward. The `was_stopped` fact tracks the original state. These tasks live at `roles/lxc/tasks/start_stopped.yml` and `stop_restored.yml`.
 
 ### Delegation to PVE Nodes
 Container management commands (`pct`) delegate to the PVE node hosting the container. A single `--limit gitlab-runner-82` covers both PVE-side provisioning and in-container configuration.
@@ -161,7 +174,7 @@ A `validation-checklist.md` (gitignored) tracks manual playbook testing. Git hoo
 
 | Hook | Trigger | Action |
 |------|---------|--------|
-| **pre-commit** | Every commit | Runs `--syntax-check` on all playbooks. Resets checklist if `playbooks/` or `tasks/` files are staged. |
+| **pre-commit** | Every commit | Runs `--syntax-check` on all playbooks. Resets checklist if `playbooks/` or `roles/` files are staged. |
 | **pre-push** | Every push | Blocks push if checklist has unchecked items. |
 
 ```bash
@@ -176,19 +189,18 @@ A `validation-checklist.md` (gitignored) tracks manual playbook testing. Git hoo
 git push --no-verify
 ```
 
-The interactive validator runs playbooks in dependency order (e.g., `setup_gitlab_runners` before `delete_gitlab_runner`), shows output, then asks the operator to confirm the result before marking it verified. Sub-playbooks called by an orchestrator (like `setup_gitlab_runners.yml`) are confirmed together after the parent runs.
+### Adding a New Role or Playbook
 
-### Adding a New Playbook
-
-1. Create the playbook in `playbooks/`
-2. Add a usage comment header (see existing playbooks for format)
-3. Add an entry to `validation-checklist.md`
-4. Test and check off the item
-5. Update this README's playbook table
+1. Create the role under `roles/<name>/` with `tasks/main.yml` (and optionally `handlers/`, `defaults/`, `vars/`, `files/`)
+2. Create a thin playbook in `playbooks/` that uses the role
+3. Add a usage comment header (see existing playbooks for format)
+4. Add an entry to `validation-checklist.md`
+5. Test and check off the item
+6. Update this README
 
 ### Secrets
 
-GitLab API tokens are stored in `inventory/group_vars/GitLab_runners/vault.yml` (encrypted with Ansible Vault). The vault password is read from `.vault_pass` (gitignored).
+Secrets are stored in `vault.yml` files (encrypted with Ansible Vault). The vault password is read from `.vault_pass` (gitignored).
 
 ```bash
 # Edit vault

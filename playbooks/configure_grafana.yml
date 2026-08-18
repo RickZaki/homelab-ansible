@@ -1,0 +1,22 @@
+---
+# configure_grafana.yml — Install Grafana and configure OIDC with Authentik.
+#
+# Authentik prerequisites:
+#   1. Create an OAuth2/OpenID Connect provider with:
+#      - Redirect URI: <grafana_root_url>/login/generic_oauth
+#      - Logout URI:   <grafana_root_url>/logout
+#      - Logout Method: Front-channel
+#      - Scopes:       authentik default OAuth Mapping: Application Entitlements
+#   2. Create application entitlements: "Grafana Admins", "Grafana Editors"
+#   3. Note the Client ID and Client Secret -> store in vault
+#
+# Usage:
+#   ansible-playbook playbooks/configure_grafana.yml
+
+- name: Configure Grafana
+  hosts: grafana
+  become: false
+  gather_facts: false
+
+  roles:
+    - role: grafana

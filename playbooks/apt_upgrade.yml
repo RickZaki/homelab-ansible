@@ -16,17 +16,17 @@
 
 - name: APT update and upgrade
   hosts: apt_capable
-  become: true
+  become: "{{ ansible_connection | default('ssh') != 'community.proxmox.proxmox_pct_remote' }}"
   gather_facts: false
   serial: "{{ batch_size | default(omit) }}"  # use --extra-vars batch_size=1 for rolling reboots
 
   pre_tasks:
     - name: Start stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_start_stopped.yml
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/start_stopped.yml
 
   post_tasks:
     - name: Restore stopped LXCs
-      ansible.builtin.include_tasks: ../tasks/lxc_stop_restored.yml
+      ansible.builtin.include_tasks: ../roles/lxc/tasks/stop_restored.yml
 
   tasks:
     - name: Update apt cache and upgrade packages

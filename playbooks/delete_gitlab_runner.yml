@@ -10,7 +10,7 @@
 
 - name: Unregister GitLab Runner and destroy LXC
   hosts: "{{ target_host | mandatory('Pass -e target_host=<hostname> — this playbook is destructive') }}"
-  become: true
+  become: false
   gather_facts: false
 
   vars_files:
@@ -19,7 +19,7 @@
 
   tasks:
     - name: Start stopped LXCs
-      ansible.builtin.import_tasks: ../tasks/lxc_start_stopped.yml
+      ansible.builtin.import_tasks: ../roles/lxc/tasks/start_stopped.yml
 
     # ── Unregister runner from GitLab ───────────────────────────────────
     - name: Read runner authentication token from config.toml
@@ -44,19 +44,5 @@
       no_log: true
 
     # ── Destroy LXC ────────────────────────────────────────────────────
-    - name: Check LXC status
-      ansible.builtin.command: /usr/sbin/pct status {{ proxmox_vmid }}
-      delegate_to: "{{ pve_node }}"
-      register: lxc_status
-      changed_when: false
-      failed_when: false
-
-    - name: Stop LXC if running
-      ansible.builtin.command: /usr/sbin/pct stop {{ proxmox_vmid }}
-      delegate_to: "{{ pve_node }}"
-      when: "'running' in lxc_status.stdout"
-
-    - name: Destroy LXC
-      ansible.builtin.command: /usr/sbin/pct destroy {{ proxmox_vmid }} --purge
-      delegate_to: "{{ pve_node }}"
-      when: lxc_status.rc == 0
+    - name: Delete LXC container
+      ansible.builtin.import_tasks: ../roles/lxc/tasks/delete.yml

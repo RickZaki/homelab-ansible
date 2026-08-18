@@ -21,34 +21,21 @@
   gather_facts: false
 
   vars:
-    # --- identity ------------------------------------------------------ #
     lxc_vmid: "{{ '133711' ~ node_id }}"
     lxc_hostname: "gitlab-runner-{{ node_id }}"
-
-    # --- resources ----------------------------------------------------- #
     lxc_cores: 1
     lxc_memory: 512
     lxc_root_size: 8
-
-    # --- network ------------------------------------------------------- #
     lxc_bridge: vmbr1
     lxc_vlan: "599"
-
-    # --- storage ------------------------------------------------------- #
     lxc_storage: local-zfs
-
-    # --- community script ---------------------------------------------- #
     lxc_script_url: "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/debian.sh"
-
-    # --- LXC-specific settings ----------------------------------------- #
     lxc_features: "nesting=1"
     lxc_autologin: true
-
     lxc_extra_mounts:
       - id: mp0
         size: 8
         path: /var/lib/docker
 
-  tasks:
-    - ansible.builtin.import_tasks: ../tasks/provision_lxc.yml
-      delegate_to: "{{ pve_node }}"
+  roles:
+    - role: lxc
