@@ -1,0 +1,109 @@
+---
+stages:
+  - lint
+  - validate
+  - security
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+# ------------------------------------------------------------------ #
+# YAML lint                                                           #
+# ------------------------------------------------------------------ #
+yamllint:
+  stage: lint
+  image: python:3.12-slim
+  tags: [docker, linux]
+  cache:
+    key: pip
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install yamllint
+  script:
+    - yamllint -s .
+  rules:
+    - changes:
+        - "**/*.yml"
+        - "**/*.yaml"
+        - .yamllint
+
+# ------------------------------------------------------------------ #
+# Ansible lint                                                        #
+# ------------------------------------------------------------------ #
+ansible-lint:
+  stage: lint
+  image: python:3.12-slim
+  tags: [docker, linux]
+  cache:
+    key: pip
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install ansible-lint ansible
+  script:
+    - ansible-lint
+  rules:
+    - changes:
+        - "playbooks/**"
+        - "roles/**"
+        - "inventory/**"
+        - .ansible-lint
+
+# ------------------------------------------------------------------ #
+# Syntax check all playbooks                                          #
+# ------------------------------------------------------------------ #
+syntax-check:
+  stage: validate
+  image: python:3.12-slim
+  tags: [docker, linux]
+  cache:
+    key: pip
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install ansible
+    - ansible-galaxy collection install community.proxmox
+  script:
+    - |
+      exit_code=0
+      for pb in playbooks/*.yml; do
+        echo "--- Checking $pb ---"
+        # Playbooks with mandatory() need a dummy var to pass syntax check
+        if grep -q 'mandatory(' "$pb"; then
+          ansible-playbook "$pb" --syntax-check -e target_host=syntax_check || exit_code=1
+        else
+          ansible-playbook "$pb" --syntax-check || exit_code=1
+        fi
+      done
+      exit $exit_code
+
+# ------------------------------------------------------------------ #
+# Checkov — IaC security scanning                                     #
+# ------------------------------------------------------------------ #
+checkov:
+  stage: security
+  image: python:3.12-slim
+  tags: [docker, linux]
+  cache:
+    key: pip
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install checkov
+  script:
+    - checkov -d . --framework ansible --output cli --soft-fail
+  allow_failure: true
+
+# ------------------------------------------------------------------ #
+# GitLab security templates (CE-compatible)                           #
+# ------------------------------------------------------------------ #
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+sast:
+  stage: security
+
+secret_detection:
+  stage: security
