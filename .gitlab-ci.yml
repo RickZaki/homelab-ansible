@@ -86,9 +86,9 @@ checkov:
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
-  - project: 'devops/ci-templates'
+  - file: '/templates/yamllint/template.yml'
+    project: 'devops/ci-templates'
     ref: main
-    file: '/templates/yamllint/template.yml'
 
 sast:
   stage: security
