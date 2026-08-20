@@ -104,25 +104,20 @@
       no_log: true
 
     # --- Clone config repo ---
+    - name: Set default git branch to main
+      ansible.builtin.command: git config --global init.defaultBranch main
+      changed_when: false
+
     - name: Check if config dir is already a git repo
       ansible.builtin.stat:
         path: "{{ grafana_config_dir }}/.git"
-      register: config_git
-
-    - name: Back up existing grafana config before cloning
-      ansible.builtin.command: >
-        cp -a {{ grafana_config_dir }} {{ grafana_config_dir }}.bak
-      when: not config_git.stat.exists
+      register: config_git_dir
 
     - name: Remove default grafana config dir before cloning
       ansible.builtin.file:
         path: "{{ grafana_config_dir }}"
         state: absent
-      when: not config_git.stat.exists
-
-    - name: Set default git branch to main
-      ansible.builtin.command: git config --global init.defaultBranch main
-      changed_when: false
+      when: not config_git_dir.stat.exists
 
     - name: Clone grafana config repo
       ansible.builtin.git:
@@ -130,18 +125,6 @@
         dest: "{{ grafana_config_dir }}"
         version: main
         accept_hostkey: true
-      notify: Restart grafana
-
-    # --- Restore config files overwritten by git clone ---
-    - name: Restore grafana.ini from backup
-      ansible.builtin.copy:
-        src: "{{ grafana_config_dir }}.bak/grafana.ini"
-        dest: "{{ grafana_config_dir }}/grafana.ini"
-        remote_src: true
-        owner: root
-        group: grafana
-        mode: "0640"
-      when: not config_git.stat.exists
       notify: Restart grafana
 
     - name: Re-apply OIDC env file after clone
