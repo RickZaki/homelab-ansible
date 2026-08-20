@@ -127,7 +127,7 @@
         accept_hostkey: true
       notify: Restart grafana
 
-    - name: Re-apply OIDC env file after clone
+    - name: Write OIDC env file
       ansible.builtin.copy:
         dest: "{{ grafana_config_dir }}/oidc.env"
         content: "{{ grafana_oidc_env_content }}"
@@ -135,3 +135,11 @@
         group: grafana
         mode: "0640"
       notify: Restart grafana
+
+    # --- Start service (after config is in place) ---
+    - name: Enable and start grafana-server
+      ansible.builtin.systemd:
+        name: grafana-server
+        enabled: true
+        state: started
+        daemon_reload: true
