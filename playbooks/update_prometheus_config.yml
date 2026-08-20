@@ -19,6 +19,7 @@
   tasks:
     - name: Pull latest config
       ansible.builtin.git:
+        # yamllint disable-line rule:line-length
         repo: "git@gitlab.home.rickzaki.com:homelab/services/ops/prometheus-config.git"
         dest: /etc/prometheus
         version: main

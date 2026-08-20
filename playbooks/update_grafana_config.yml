@@ -13,6 +13,7 @@
   tasks:
     - name: Pull latest config
       ansible.builtin.git:
+        # yamllint disable-line rule:line-length
         repo: "git@gitlab.home.rickzaki.com:homelab/services/ops/grafana-config.git"
         dest: /etc/grafana
         version: main
