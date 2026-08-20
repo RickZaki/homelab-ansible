@@ -112,7 +112,8 @@
       ExecStart={{ prometheus_install_dir }}/prometheus \
         --config.file={{ prometheus_config_dir }}/prometheus.yml \
         --storage.tsdb.path={{ prometheus_data_dir }} \
-        --web.listen-address={{ prometheus_listen_address }}
+        --web.listen-address={{ prometheus_listen_address }} \
+        --web.enable-lifecycle
       Restart=always
 
       [Install]
