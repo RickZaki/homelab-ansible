@@ -24,7 +24,7 @@ ansible-lint:
     - printf '#!/bin/sh\necho "$ANSIBLE_VAULT_PASSWORD"' > .vault_pass
     - chmod +x .vault_pass
   script:
-    - ansible-lint
+    - ansible-lint --offline
   rules:
     - changes:
         - "playbooks/**"
