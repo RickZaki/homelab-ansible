@@ -21,6 +21,7 @@ ansible-lint:
       - .cache/pip
   before_script:
     - pip install ansible-lint ansible-core
+    - ansible-galaxy collection install community.general
     - printf '#!/bin/sh\necho "$ANSIBLE_VAULT_PASSWORD"' > .vault_pass
     - chmod +x .vault_pass
   script:
