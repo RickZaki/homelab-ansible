@@ -1,0 +1,25 @@
+---
+# update_prometheus_config.yml — Pull latest config and reload Prometheus.
+#
+# Usage:
+#   ansible-playbook playbooks/update_prometheus_config.yml
+
+- name: Update Prometheus config
+  hosts: prometheus
+  become: false
+  gather_facts: false
+
+  handlers:
+    - name: Reload prometheus
+      ansible.builtin.uri:
+        url: http://localhost:9090/-/reload
+        method: POST
+      listen: config changed
+
+  tasks:
+    - name: Pull latest config
+      ansible.builtin.git:
+        repo: "git@gitlab.home.rickzaki.com:homelab/services/ops/prometheus-config.git"
+        dest: /etc/prometheus
+        version: main
+      notify: config changed

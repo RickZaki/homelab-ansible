@@ -1,0 +1,18 @@
+---
+# update_grafana_config.yml — Pull latest config on Grafana server.
+# Dashboards auto-reload within 30s; no restart needed.
+#
+# Usage:
+#   ansible-playbook playbooks/update_grafana_config.yml
+
+- name: Update Grafana config
+  hosts: grafana
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Pull latest config
+      ansible.builtin.git:
+        repo: "git@gitlab.home.rickzaki.com:homelab/services/ops/grafana-config.git"
+        dest: /etc/grafana
+        version: main
