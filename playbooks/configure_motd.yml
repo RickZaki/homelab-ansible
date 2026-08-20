@@ -1,0 +1,56 @@
+---
+# configure_motd.yml — Deploy a colored login banner for TF-managed containers.
+# Matches the community-scripts style using /etc/profile.d/.
+#
+# Usage:
+#   ansible-playbook playbooks/configure_motd.yml
+
+- name: Configure MOTD banner
+  hosts: pve99_containers:GitLab_runners
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Set xterm-256color in bashrc
+      ansible.builtin.lineinfile:
+        path: /root/.bashrc
+        line: "export TERM='xterm-256color'"
+        create: true
+        mode: "0644"
+
+    - name: Disable default MOTD scripts
+      ansible.builtin.shell: chmod -x /etc/update-motd.d/* 2>/dev/null || true
+      changed_when: false
+
+    - name: Deploy profile.d login banner
+      ansible.builtin.copy:
+        dest: /etc/profile.d/00_lxc-details.sh
+        mode: "0755"
+        # yamllint disable rule:line-length
+        content: |
+          [ -t 1 ] || return 0
+          BOLD=$'\033[1m'
+          YW=$'\033[33m'
+          GN=$'\033[1;92m'
+          CL=$'\033[m'
+          TAB="  "
+          echo ""
+          echo -e "${BOLD}Debian LXC Container${CL}"
+          echo -e "${TAB}🌐${TAB}${YW}Managed by: ${GN}Terraform + Ansible${CL}"
+          echo ""
+          os_display="Unknown OS"
+          if [ -r /etc/os-release ]; then
+            . /etc/os-release
+            os_display="${PRETTY_NAME:-${NAME:-Unknown OS}}"
+          fi
+          echo -e "${TAB}🖥️${TAB}${YW}OS: ${GN}${os_display}${CL}"
+          echo -e "${TAB}🏠${TAB}${YW}Hostname: ${GN}$(hostname)${CL}"
+          echo -e "${TAB}💡${TAB}${YW}IP Address: ${GN}$(hostname -I | awk '{print $1}')${CL}"
+          echo ""
+        # yamllint enable rule:line-length
+
+    - name: Clear static motd to avoid duplication
+      ansible.builtin.copy:
+        dest: /etc/motd
+        content: ""
+        mode: "0644"

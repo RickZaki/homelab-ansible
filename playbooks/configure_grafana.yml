@@ -1,5 +1,6 @@
 ---
-# configure_grafana.yml — Install Grafana and configure OIDC with Authentik.
+# configure_grafana.yml — Install Grafana, configure OIDC with Authentik,
+# and deploy config from Git.
 #
 # Authentik prerequisites:
 #   1. Create an OAuth2/OpenID Connect provider with:
@@ -10,6 +11,11 @@
 #   2. Create application entitlements: "Grafana Admins", "Grafana Editors"
 #   3. Note the Client ID and Client Secret -> store in vault
 #
+# Prerequisites:
+#   - LXC container created via Terraform
+#   - Container running and reachable
+#   - vault_gitlab_api_token set in vault
+#
 # Usage:
 #   ansible-playbook playbooks/configure_grafana.yml
 
@@ -18,5 +24,131 @@
   become: false
   gather_facts: false
 
+  vars:
+    git_ssh_key_path: /root/.ssh/id_ed25519
+    gitlab_host: gitlab.home.rickzaki.com
+    gitlab_url: "https://{{ gitlab_host }}"
+    gitlab_project_path: homelab/services/ops/grafana-config
+    gitlab_api_token: "{{ vault_gitlab_api_token }}"
+    # yamllint disable-line rule:line-length
+    grafana_config_repo: "git@{{ gitlab_host }}:{{ gitlab_project_path }}.git"
+    grafana_config_dir: /etc/grafana
+
+  vars_files:
+    - ../inventory/group_vars/GitLab_runners/vault.yml
+
   roles:
     - role: grafana
+
+  tasks:
+    # --- Git + SSH key ---
+    - name: Install git
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: true
+
+    - name: Ensure .ssh directory exists
+      ansible.builtin.file:
+        path: /root/.ssh
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Generate ed25519 SSH key pair
+      ansible.builtin.command: >
+        ssh-keygen -t ed25519 -f {{ git_ssh_key_path }}
+        -N "" -C "{{ inventory_hostname }}@ansible-deploy"
+      args:
+        creates: "{{ git_ssh_key_path }}"
+
+    - name: Add GitLab host key to known_hosts
+      ansible.builtin.shell: >
+        ssh-keyscan -H {{ gitlab_host }} >> /root/.ssh/known_hosts 2>/dev/null
+      args:
+        creates: /root/.ssh/known_hosts
+
+    # --- Register deploy key on GitLab ---
+    - name: Read public key
+      ansible.builtin.command: cat {{ git_ssh_key_path }}.pub
+      register: deploy_key
+      changed_when: false
+
+    - name: Check if deploy key already exists on GitLab
+      ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
+        method: GET
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        status_code: 200
+      register: existing_keys
+      no_log: true
+
+    - name: Add deploy key to GitLab repo
+      ansible.builtin.uri:
+        # yamllint disable-line rule:line-length
+        url: "{{ gitlab_url }}/api/v4/projects/{{ gitlab_project_path | regex_replace('/', '%2F') }}/deploy_keys"
+        method: POST
+        headers:
+          PRIVATE-TOKEN: "{{ gitlab_api_token }}"
+        body_format: json
+        body:
+          title: "{{ inventory_hostname }} (ansible-deploy)"
+          key: "{{ deploy_key.stdout }}"
+          can_push: false
+        status_code: 201
+      # yamllint disable-line rule:line-length
+      when: deploy_key.stdout not in (existing_keys.json | map(attribute='key') | list)
+      no_log: true
+
+    # --- Clone config repo ---
+    - name: Check if config dir is already a git repo
+      ansible.builtin.stat:
+        path: "{{ grafana_config_dir }}/.git"
+      register: config_git
+
+    - name: Back up existing grafana config before cloning
+      ansible.builtin.command: >
+        cp -a {{ grafana_config_dir }} {{ grafana_config_dir }}.bak
+      when: not config_git.stat.exists
+
+    - name: Remove default grafana config dir before cloning
+      ansible.builtin.file:
+        path: "{{ grafana_config_dir }}"
+        state: absent
+      when: not config_git.stat.exists
+
+    - name: Set default git branch to main
+      ansible.builtin.command: git config --global init.defaultBranch main
+      changed_when: false
+
+    - name: Clone grafana config repo
+      ansible.builtin.git:
+        repo: "{{ grafana_config_repo }}"
+        dest: "{{ grafana_config_dir }}"
+        version: main
+        accept_hostkey: true
+      notify: Restart grafana
+
+    # --- Restore config files overwritten by git clone ---
+    - name: Restore grafana.ini from backup
+      ansible.builtin.copy:
+        src: "{{ grafana_config_dir }}.bak/grafana.ini"
+        dest: "{{ grafana_config_dir }}/grafana.ini"
+        remote_src: true
+        owner: root
+        group: grafana
+        mode: "0640"
+      when: not config_git.stat.exists
+      notify: Restart grafana
+
+    - name: Re-apply OIDC env file after clone
+      ansible.builtin.copy:
+        dest: "{{ grafana_config_dir }}/oidc.env"
+        content: "{{ grafana_oidc_env_content }}"
+        owner: root
+        group: grafana
+        mode: "0640"
+      notify: Restart grafana
