@@ -9,31 +9,37 @@
   become: false
   gather_facts: false
 
+  vars:
+    getty_dir: /etc/systemd/system/container-getty@.service.d
+
+  handlers:
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+      notify: Restart container-getty
+
+    - name: Restart container-getty
+      ansible.builtin.systemd:
+        name: container-getty@2.service
+        state: restarted
+
   tasks:
     - name: Create getty override directory
       ansible.builtin.file:
-        path: /etc/systemd/system/container-getty@.service.d
+        path: "{{ getty_dir }}"
         state: directory
         mode: "0755"
 
     - name: Write autologin override
       ansible.builtin.copy:
-        dest: /etc/systemd/system/container-getty@.service.d/autologin.conf
+        dest: "{{ getty_dir }}/autologin.conf"
         mode: "0644"
-        content: |
+        content: |-
           [Service]
           ExecStart=
-          ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 linux
-      register: autologin_conf
-
-    - name: Reload systemd and restart getty
-      when: autologin_conf.changed
-      block:
-        - name: Reload systemd daemon
-          ansible.builtin.systemd:
-            daemon_reload: true
-
-        - name: Restart container-getty@2
-          ansible.builtin.systemd:
-            name: container-getty@2.service
-            state: restarted
+          ExecStart=-/sbin/agetty \
+            --autologin root \
+            --noclear \
+            --keep-baud tty%I \
+            115200,38400,9600 linux
+      notify: Reload systemd daemon

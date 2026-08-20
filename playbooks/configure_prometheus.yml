@@ -106,8 +106,10 @@
       when: not config_git.stat.exists
 
     - name: Set default git branch to main
-      ansible.builtin.command: git config --global init.defaultBranch main
-      changed_when: false
+      community.general.git_config:
+        name: init.defaultBranch
+        value: main
+        scope: global
 
     - name: Clone prometheus config repo
       ansible.builtin.git:
