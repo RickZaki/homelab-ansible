@@ -18,3 +18,11 @@ grafana_oidc_role_attribute_path: "contains(entitlements[*], 'Grafana Admins') &
 grafana_oidc_auto_login: true
 
 grafana_root_url: https://grafana.home.rickzaki.com
+
+# Grafana SMTP settings (Gmail)
+grafana_smtp_host: smtp.gmail.com:587
+grafana_smtp_user: grafana@rickzaki.com
+grafana_smtp_password: "{{ vault_grafana_smtp_password }}"
+grafana_smtp_from_address: grafana@rickzaki.com
+grafana_smtp_from_name: Grafana Homelab
+grafana_alert_to: rick@rickzaki.com

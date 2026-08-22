@@ -1,9 +1,46 @@
 ---
 # update_grafana_config.yml — Pull latest config on Grafana server.
 # Dashboards auto-reload within 30s; no restart needed.
+# Also re-injects datasource configs from role defaults.
 #
 # Usage:
 #   ansible-playbook playbooks/update_grafana_config.yml
+
+- name: Read datasource connection details
+  hosts: influx-siem:prometheus
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Load InfluxDB defaults
+      ansible.builtin.include_vars:
+        file: ../roles/influxdb/defaults/main.yml
+      when: inventory_hostname == 'influx-siem'
+
+    - name: Read Grafana reader token
+      ansible.builtin.command:
+        cmd: cat /root/.influxdb_grafana_token
+      register: influxdb_grafana_token_file
+      changed_when: false
+      when: inventory_hostname == 'influx-siem'
+
+    - name: Set InfluxDB connection facts
+      ansible.builtin.set_fact:
+        influxdb_grafana_token: "{{ influxdb_grafana_token_file.stdout }}"
+        influxdb_url: "{{ influxdb_url }}"
+        influxdb_org: "{{ influxdb_org }}"
+        influxdb_bucket: "{{ influxdb_bucket }}"
+      when: inventory_hostname == 'influx-siem'
+
+    - name: Load Prometheus defaults
+      ansible.builtin.include_vars:
+        file: ../roles/prometheus/defaults/main.yml
+      when: inventory_hostname == 'prometheus'
+
+    - name: Set Prometheus connection facts
+      ansible.builtin.set_fact:
+        prometheus_url: "{{ prometheus_url }}"
+      when: inventory_hostname == 'prometheus'
 
 - name: Update Grafana config
   hosts: grafana
@@ -17,3 +54,51 @@
         repo: "git@gitlab.home.rickzaki.com:homelab/services/ops/grafana-config.git"
         dest: /etc/grafana
         version: main
+
+    - name: Write Prometheus datasource
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/prometheus.yml
+        content: |
+          ---
+          apiVersion: 1
+
+          datasources:
+            - access: proxy
+              editable: true
+              isDefault: true
+              name: Prometheus
+              type: prometheus
+              uid: prometheus
+              url: {{ hostvars['prometheus']['prometheus_url'] }}
+        owner: root
+        group: grafana
+        mode: "0640"
+
+    - name: Write InfluxDB datasource with token
+      vars:
+        influx: "{{ hostvars['influx-siem'] }}"
+      ansible.builtin.copy:
+        dest: /etc/grafana/provisioning/datasources/influxdb.yml
+        # yamllint disable rule:line-length
+        content: |
+          ---
+          apiVersion: 1
+
+          datasources:
+            - access: proxy
+              editable: true
+              isDefault: false
+              name: InfluxDB
+              type: influxdb
+              uid: influxdb
+              url: {{ influx.influxdb_url }}
+              jsonData:
+                version: Flux
+                organization: {{ influx.influxdb_org }}
+                defaultBucket: {{ influx.influxdb_bucket }}
+              secureJsonData:
+                token: {{ influx.influxdb_grafana_token }}
+        # yamllint enable rule:line-length
+        owner: root
+        group: grafana
+        mode: "0640"

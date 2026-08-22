@@ -91,22 +91,55 @@
   when: influxdb_setup_check.json.allowed | default(false)
   no_log: true
 
-- name: Get bucket ID for scoped token
+- name: Get PVE bucket ID
   ansible.builtin.command:
     cmd: influx bucket list --name {{ influxdb_bucket }} --json
   register: influxdb_bucket_json
   changed_when: false
 
-- name: Set bucket ID fact
+- name: Set PVE bucket ID fact
   ansible.builtin.set_fact:
     influxdb_bucket_id: >-
       {{ (influxdb_bucket_json.stdout | from_json | first).id }}
+
+# --- Telegraf bucket ---
+
+- name: Check if Telegraf bucket exists
+  ansible.builtin.command:
+    cmd: influx bucket list --name {{ influxdb_telegraf_bucket }} --json
+  register: influxdb_telegraf_bucket_check
+  changed_when: false
+  failed_when: false
+
+- name: Create Telegraf bucket
+  ansible.builtin.command:
+    cmd: >-
+      influx bucket create
+      --org {{ influxdb_org }}
+      --name {{ influxdb_telegraf_bucket }}
+      --retention {{ influxdb_retention }}
+  when: influxdb_telegraf_bucket_check.rc != 0
+
+- name: Get Telegraf bucket ID
+  ansible.builtin.command:
+    cmd: influx bucket list --name {{ influxdb_telegraf_bucket }} --json
+  register: influxdb_telegraf_bucket_json
+  changed_when: false
+
+- name: Set Telegraf bucket ID fact
+  ansible.builtin.set_fact:
+    influxdb_telegraf_bucket_id: >-
+      {{ (influxdb_telegraf_bucket_json.stdout | from_json | first).id }}
+
+# --- Auth tokens ---
 
 - name: List existing auth tokens
   ansible.builtin.command:
     cmd: influx auth list --json
   register: influxdb_auth_json
   changed_when: false
+
+# --- PVE writer token ---
 
 - name: Check if PVE writer token already exists
   ansible.builtin.set_fact:
@@ -142,3 +175,88 @@
 - name: Set PVE token fact
   ansible.builtin.set_fact:
     influxdb_pve_token: "{{ influxdb_pve_token_file.stdout }}"
+
+# --- Telegraf writer token ---
+
+- name: Check if Telegraf writer token already exists
+  ansible.builtin.set_fact:
+    influxdb_telegraf_token_exists: >-
+      {{ influxdb_auth_json.stdout | from_json
+         | selectattr('description', 'equalto', 'Telegraf writer')
+         | list | length > 0 }}
+
+- name: Create scoped Telegraf writer token
+  ansible.builtin.command:
+    cmd: >-
+      influx auth create
+      --org {{ influxdb_org }}
+      --description "Telegraf writer"
+      --write-bucket {{ influxdb_telegraf_bucket_id }}
+      --json
+  register: influxdb_telegraf_token_result
+  when: not influxdb_telegraf_token_exists
+
+- name: Save Telegraf writer token to file
+  ansible.builtin.copy:
+    dest: /root/.influxdb_telegraf_token
+    content: "{{ (influxdb_telegraf_token_result.stdout | from_json).token }}"
+    mode: "0600"
+  when: influxdb_telegraf_token_result is changed
+
+- name: Read Telegraf writer token from file
+  ansible.builtin.command:
+    cmd: cat /root/.influxdb_telegraf_token
+  register: influxdb_telegraf_token_file
+  changed_when: false
+
+- name: Set Telegraf token fact
+  ansible.builtin.set_fact:
+    influxdb_telegraf_token: "{{ influxdb_telegraf_token_file.stdout }}"
+
+# --- Grafana reader token (reads both pve and pve-telegraf buckets) ---
+
+- name: Find existing Grafana reader tokens
+  ansible.builtin.set_fact:
+    influxdb_grafana_tokens: >-
+      {{ influxdb_auth_json.stdout | from_json
+         | selectattr('description', 'equalto', 'Grafana reader')
+         | list }}
+
+- name: Delete old Grafana reader token if Telegraf bucket is new
+  ansible.builtin.command:
+    cmd: >-
+      influx auth delete
+      --id {{ item.id }}
+  loop: "{{ influxdb_grafana_tokens }}"
+  when: influxdb_telegraf_bucket_check.rc != 0
+
+- name: Create scoped Grafana reader token
+  ansible.builtin.command:
+    cmd: >-
+      influx auth create
+      --org {{ influxdb_org }}
+      --description "Grafana reader"
+      --read-bucket {{ influxdb_bucket_id }}
+      --read-bucket {{ influxdb_telegraf_bucket_id }}
+      --json
+  register: influxdb_grafana_token_result
+  when: >-
+    influxdb_grafana_tokens | length == 0 or
+    influxdb_telegraf_bucket_check.rc != 0
+
+- name: Save Grafana reader token to file
+  ansible.builtin.copy:
+    dest: /root/.influxdb_grafana_token
+    content: "{{ (influxdb_grafana_token_result.stdout | from_json).token }}"
+    mode: "0600"
+  when: influxdb_grafana_token_result is changed
+
+- name: Read Grafana reader token from file
+  ansible.builtin.command:
+    cmd: cat /root/.influxdb_grafana_token
+  register: influxdb_grafana_token_file
+  changed_when: false
+
+- name: Set Grafana token fact
+  ansible.builtin.set_fact:
+    influxdb_grafana_token: "{{ influxdb_grafana_token_file.stdout }}"
