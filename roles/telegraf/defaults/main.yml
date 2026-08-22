@@ -1,0 +1,6 @@
+---
+telegraf_influxdb_url: http://influx.siem.internal:8086
+telegraf_influxdb_org: home.rickzaki.com
+telegraf_influxdb_bucket: pve-telegraf
+telegraf_influxdb_retention: 90d
+telegraf_collection_interval: 60s

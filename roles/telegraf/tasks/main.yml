@@ -1,0 +1,94 @@
+---
+# roles/telegraf/tasks/main.yml
+# Install Telegraf from official InfluxData apt repository.
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - gnupg
+      - curl
+    state: present
+
+- name: Check InfluxData GPG key contains signing key
+  ansible.builtin.shell:
+    # yamllint disable-line rule:line-length
+    cmd: gpg --no-default-keyring --keyring /usr/share/keyrings/influxdata.gpg --list-keys AC10D7449F343ADCEFDDC2B6DA61C26A0585BD3B
+  register: influxdata_key_check
+  changed_when: false
+  failed_when: false
+
+- name: Download InfluxData GPG key
+  ansible.builtin.get_url:
+    url: https://repos.influxdata.com/influxdata-archive.key
+    dest: /tmp/influxdata-archive.key
+    mode: "0644"
+  when: influxdata_key_check.rc != 0
+
+- name: Remove stale InfluxData GPG keyring
+  ansible.builtin.file:
+    path: /usr/share/keyrings/influxdata.gpg
+    state: absent
+  when: influxdata_key_check.rc != 0
+
+- name: Dearmor InfluxData GPG key
+  ansible.builtin.command:
+    cmd: >-
+      gpg --dearmor -o /usr/share/keyrings/influxdata.gpg
+      /tmp/influxdata-archive.key
+    creates: /usr/share/keyrings/influxdata.gpg
+
+- name: Add InfluxData apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/influxdata.list
+    # yamllint disable-line rule:line-length
+    content: "deb [signed-by=/usr/share/keyrings/influxdata.gpg] https://repos.influxdata.com/debian stable main\n"
+    mode: "0644"
+
+- name: Install telegraf
+  ansible.builtin.apt:
+    name: telegraf
+    state: present
+    update_cache: true
+
+- name: Deploy pct-df-metrics script
+  ansible.builtin.copy:
+    src: pct-df-metrics.sh
+    dest: /usr/local/bin/pct-df-metrics.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy telegraf configuration
+  ansible.builtin.copy:
+    dest: /etc/telegraf/telegraf.conf
+    owner: root
+    group: telegraf
+    mode: "0640"
+    content: |
+      [global_tags]
+
+      [agent]
+        interval = "{{ telegraf_collection_interval }}"
+        round_interval = true
+        flush_interval = "10s"
+        hostname = ""
+        omit_hostname = false
+
+      [[outputs.influxdb_v2]]
+        urls = ["{{ telegraf_influxdb_url }}"]
+        token = "{{ telegraf_influxdb_token }}"
+        organization = "{{ telegraf_influxdb_org }}"
+        bucket = "{{ telegraf_influxdb_bucket }}"
+
+      [[inputs.exec]]
+        commands = ["/usr/local/bin/pct-df-metrics.sh"]
+        timeout = "15s"
+        data_format = "influx"
+  notify: Restart telegraf
+
+- name: Enable and start telegraf
+  ansible.builtin.systemd:
+    name: telegraf
+    enabled: true
+    state: started
+    daemon_reload: true

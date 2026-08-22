@@ -1,0 +1,42 @@
+---
+# configure_telegraf.yml — Install Telegraf on PVE nodes to collect
+# LXC mount point storage metrics and write them to InfluxDB.
+#
+# Prerequisites:
+#   - InfluxDB configured (run configure_influxdb.yml first)
+#   - pve-telegraf bucket and Telegraf writer token created by influxdb role
+#
+# Usage:
+#   ansible-playbook playbooks/configure_telegraf.yml
+
+- name: Read Telegraf writer token from InfluxDB
+  hosts: influx-siem
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Load InfluxDB defaults
+      ansible.builtin.include_vars:
+        file: ../roles/influxdb/defaults/main.yml
+
+    - name: Read Telegraf writer token
+      ansible.builtin.command:
+        cmd: cat /root/.influxdb_telegraf_token
+      register: influxdb_telegraf_token_file
+      changed_when: false
+
+    - name: Set Telegraf token fact
+      ansible.builtin.set_fact:
+        influxdb_telegraf_token: "{{ influxdb_telegraf_token_file.stdout }}"
+
+- name: Install Telegraf on PVE nodes
+  hosts: ProxmoxVirtualEnvironments
+  become: true
+  gather_facts: false
+
+  vars:
+    telegraf_influxdb_token: >-
+      {{ hostvars['influx-siem']['influxdb_telegraf_token'] }}
+
+  roles:
+    - role: telegraf
