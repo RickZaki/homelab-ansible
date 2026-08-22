@@ -1,0 +1,57 @@
+---
+# configure_influxdb.yml — Install InfluxDB 2.x for PVE telemetry.
+#
+# Usage:
+#   ansible-playbook playbooks/configure_influxdb.yml
+#
+# Prerequisites:
+#   - LXC container created via Terraform
+#   - Container running and reachable
+#   - vault_influxdb_admin_password set in vault
+
+- name: Configure InfluxDB
+  hosts: influx-siem
+  become: false
+  gather_facts: false
+
+  vars_files:
+    - ../inventory/group_vars/pve99_containers/vault.yml
+
+  roles:
+    - role: influxdb
+
+  tasks:
+    - name: Persist vars as facts for cross-play access
+      ansible.builtin.set_fact:
+        influxdb_org: "{{ influxdb_org }}"
+        influxdb_bucket: "{{ influxdb_bucket }}"
+        influxdb_pve_token: "{{ influxdb_pve_token }}"
+
+    - name: Display PVE writer token
+      ansible.builtin.debug:
+        msg: >-
+          InfluxDB is ready.
+            Server: influx.siem.internal
+            Organization: {{ influxdb_org }}
+            Bucket: {{ influxdb_bucket }}
+            Token: {{ influxdb_pve_token }}
+
+- name: Configure PVE metric server
+  hosts: pve99
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Configure PVE metric server via API
+      # yamllint disable rule:line-length
+      ansible.builtin.command:
+        cmd: >-
+          pvesh set /cluster/metrics/server/influx-siem
+          --server influx.siem.internal
+          --port 8086
+          --influxdbproto http
+          --organization {{ hostvars["influx-siem"]["influxdb_org"] }}
+          --bucket {{ hostvars["influx-siem"]["influxdb_bucket"] }}
+          --token {{ hostvars["influx-siem"]["influxdb_pve_token"] }}
+      # yamllint enable rule:line-length
+      no_log: true

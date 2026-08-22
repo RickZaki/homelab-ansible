@@ -1,0 +1,144 @@
+---
+# roles/influxdb/tasks/main.yml
+# Install InfluxDB 2.x from official InfluxData apt repository.
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - gnupg
+      - curl
+    state: present
+
+- name: Check InfluxData GPG key contains signing key
+  ansible.builtin.shell:
+    # yamllint disable-line rule:line-length
+    cmd: gpg --no-default-keyring --keyring /usr/share/keyrings/influxdata.gpg --list-keys AC10D7449F343ADCEFDDC2B6DA61C26A0585BD3B
+  register: influxdata_key_check
+  changed_when: false
+  failed_when: false
+
+- name: Download InfluxData GPG key
+  ansible.builtin.get_url:
+    url: https://repos.influxdata.com/influxdata-archive.key
+    dest: /tmp/influxdata-archive.key
+    mode: "0644"
+  when: influxdata_key_check.rc != 0
+
+- name: Remove stale InfluxData GPG keyring
+  ansible.builtin.file:
+    path: /usr/share/keyrings/influxdata.gpg
+    state: absent
+  when: influxdata_key_check.rc != 0
+
+- name: Dearmor InfluxData GPG key
+  ansible.builtin.command:
+    cmd: >-
+      gpg --dearmor -o /usr/share/keyrings/influxdata.gpg
+      /tmp/influxdata-archive.key
+    creates: /usr/share/keyrings/influxdata.gpg
+
+- name: Add InfluxData apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/influxdata.list
+    # yamllint disable-line rule:line-length
+    content: "deb [signed-by=/usr/share/keyrings/influxdata.gpg] https://repos.influxdata.com/debian stable main\n"
+    mode: "0644"
+
+- name: Install influxdb2 and CLI
+  ansible.builtin.apt:
+    name:
+      - influxdb2
+      - influxdb2-cli
+    state: present
+    update_cache: true
+
+- name: Enable and start influxdb
+  ansible.builtin.systemd:
+    name: influxdb
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for InfluxDB to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:8086/health"
+    method: GET
+    status_code: 200
+  register: influxdb_health
+  retries: 10
+  delay: 3
+  until: influxdb_health.status == 200
+
+- name: Check if InfluxDB is already set up
+  ansible.builtin.uri:
+    url: "http://localhost:8086/api/v2/setup"
+    method: GET
+    status_code: 200
+  register: influxdb_setup_check
+
+- name: Run initial InfluxDB setup
+  ansible.builtin.command:
+    cmd: >-
+      influx setup
+      --force
+      --org {{ influxdb_org }}
+      --bucket {{ influxdb_bucket }}
+      --retention {{ influxdb_retention }}
+      --username {{ influxdb_admin_user }}
+      --password {{ influxdb_admin_password }}
+      --host http://localhost:8086
+  register: influxdb_setup_result
+  when: influxdb_setup_check.json.allowed | default(false)
+  no_log: true
+
+- name: Get bucket ID for scoped token
+  ansible.builtin.command:
+    cmd: influx bucket list --name {{ influxdb_bucket }} --json
+  register: influxdb_bucket_json
+  changed_when: false
+
+- name: Set bucket ID fact
+  ansible.builtin.set_fact:
+    influxdb_bucket_id: >-
+      {{ (influxdb_bucket_json.stdout | from_json | first).id }}
+
+- name: List existing auth tokens
+  ansible.builtin.command:
+    cmd: influx auth list --json
+  register: influxdb_auth_json
+  changed_when: false
+
+- name: Check if PVE writer token already exists
+  ansible.builtin.set_fact:
+    influxdb_pve_token_exists: >-
+      {{ influxdb_auth_json.stdout | from_json
+         | selectattr('description', 'equalto', 'PVE metrics writer')
+         | list | length > 0 }}
+
+- name: Create scoped PVE writer token
+  ansible.builtin.command:
+    cmd: >-
+      influx auth create
+      --org {{ influxdb_org }}
+      --description "PVE metrics writer"
+      --write-bucket {{ influxdb_bucket_id }}
+      --json
+  register: influxdb_pve_token_result
+  when: not influxdb_pve_token_exists
+
+- name: Save PVE writer token to file
+  ansible.builtin.copy:
+    dest: /root/.influxdb_pve_token
+    content: "{{ (influxdb_pve_token_result.stdout | from_json).token }}"
+    mode: "0600"
+  when: influxdb_pve_token_result is changed
+
+- name: Read PVE writer token from file
+  ansible.builtin.command:
+    cmd: cat /root/.influxdb_pve_token
+  register: influxdb_pve_token_file
+  changed_when: false
+
+- name: Set PVE token fact
+  ansible.builtin.set_fact:
+    influxdb_pve_token: "{{ influxdb_pve_token_file.stdout }}"
