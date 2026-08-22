@@ -10,10 +10,10 @@
     state: present
 
 - name: Check InfluxData GPG key contains signing key
-  ansible.builtin.shell:
+  ansible.builtin.command:
     # yamllint disable-line rule:line-length
     cmd: gpg --no-default-keyring --keyring /usr/share/keyrings/influxdata.gpg --list-keys AC10D7449F343ADCEFDDC2B6DA61C26A0585BD3B
-  register: influxdata_key_check
+  register: telegraf_key_check
   changed_when: false
   failed_when: false
 
@@ -22,13 +22,13 @@
     url: https://repos.influxdata.com/influxdata-archive.key
     dest: /tmp/influxdata-archive.key
     mode: "0644"
-  when: influxdata_key_check.rc != 0
+  when: telegraf_key_check.rc != 0
 
 - name: Remove stale InfluxData GPG keyring
   ansible.builtin.file:
     path: /usr/share/keyrings/influxdata.gpg
     state: absent
-  when: influxdata_key_check.rc != 0
+  when: telegraf_key_check.rc != 0
 
 - name: Dearmor InfluxData GPG key
   ansible.builtin.command:
@@ -49,6 +49,14 @@
     name: telegraf
     state: present
     update_cache: true
+
+- name: Allow telegraf user to run pct list and pct df
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/telegraf-pct
+    # yamllint disable-line rule:line-length
+    content: "telegraf ALL=(root) NOPASSWD: /usr/sbin/pct list, /usr/sbin/pct df *\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
 
 - name: Deploy pct-df-metrics script
   ansible.builtin.copy:

@@ -10,7 +10,7 @@
     state: present
 
 - name: Check InfluxData GPG key contains signing key
-  ansible.builtin.shell:
+  ansible.builtin.command:
     # yamllint disable-line rule:line-length
     cmd: gpg --no-default-keyring --keyring /usr/share/keyrings/influxdata.gpg --list-keys AC10D7449F343ADCEFDDC2B6DA61C26A0585BD3B
   register: influxdata_key_check

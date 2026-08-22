@@ -9,15 +9,15 @@ set -euo pipefail
 
 HOSTNAME=$(hostname)
 
-for VMID in $(pct list 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}'); do
-  pct df "$VMID" 2>/dev/null | awk -v vmid="$VMID" -v host="$HOSTNAME" '
+for VMID in $(sudo pct list 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}'); do
+  sudo pct df "$VMID" 2>/dev/null | awk -v vmid="$VMID" -v host="$HOSTNAME" '
     NR > 1 {
       path  = $7
       size  = $3
       used  = $4
       avail = $5
 
-      # pct df outputs sizes like 8.0G, 364.0M, 7.6G
+      # sudo pct df outputs sizes like 8.0G, 364.0M, 7.6G
       total_bytes = to_bytes(size)
       used_bytes  = to_bytes(used)
       avail_bytes = to_bytes(avail)
